@@ -43,7 +43,11 @@ Ny = 50 * Int(φ₂ - φ₁) # 1/50th of a degree resolution
 Nz = length(z_faces) - 1
 
 z_faces = exponential_z_faces(; Nz, depth=5000, h=34)
-arch    = CPU()
+
+arch = CPU()
+
+# To run on Distributed architectures (for example 4 ranks in x and 4 in y):
+# arch = Distributed(arch, partition = Partition(x = 4, y = 4))
 
 grid = LatitudeLongitudeGrid(arch;
                              size = (Nx, Ny, Nz),
@@ -122,57 +126,27 @@ radiation = Radiation()
 # The coupled model! (we have no sea-ice so we do not add it)
 coupled_model = OceanSeaIceModel(ocean; atmosphere, similarity_theory, radiation)
 
-# fig = Figure()
-# ax  = Axis(fig[1, 1])
-# heatmap!(ax, view(ocean.model.tracers.T, :, :, Nz), colorrange = (10, 20), colormap = :thermal)
-# ax  = Axis(fig[1, 2])
-# heatmap!(ax, view(ocean.model.tracers.S, :, :, Nz), colorrange = (35, 40), colormap = :haline)
+# The coupled simulation:
+Δt = 2minutes
+stop_time = 30days
+simulation = Simulation(coupled_model; Δt, stop_time)
 
-# save("initial_conditions.png", fig)
-# # ![](initial_conditions.png)
+function progress(sim) 
+    u, v, w = sim.model.ocean.model.velocities
+    T, S = sim.model.ocean.model.tracers
 
-# function progress(sim) 
-#     u, v, w = sim.model.velocities
-#     T, S = sim.model.tracers
+    @info @sprintf("Time: %s, Iteration %d, Δt %s, max(vel): (%.2e, %.2e, %.2e), max(T, S): %.2f, %.2f\n",
+                   prettytime(sim.model.clock.time),
+                   sim.model.clock.iteration,
+                   prettytime(sim.Δt),
+                   maximum(abs, u), maximum(abs, v), maximum(abs, w),
+                   maximum(abs, T), maximum(abs, S))
+end
 
-#     @info @sprintf("Time: %s, Iteration %d, Δt %s, max(vel): (%.2e, %.2e, %.2e), max(T, S): %.2f, %.2f\n",
-#                    prettytime(sim.model.clock.time),
-#                    sim.model.clock.iteration,
-#                    prettytime(sim.Δt),
-#                    maximum(abs, u), maximum(abs, v), maximum(abs, w),
-#                    maximum(abs, T), maximum(abs, S))
-# end
+coupled_simulation.callbacks[:progress] = Callback(progress, IterationInterval(10))
 
-# ocean.callbacks[:progress] = Callback(progress, IterationInterval(10))
-
-# # ## Simulation warm up!
-# #
-# # We have regridded from the coarse solution of the ECCO dataset (half of a degree) to a
-# # fine grid (1/15th of a degree). The bathymetry might also have little mismatches
-# # that might crash the simulation. We warm up the simulation with a little
-# # time step for few iterations to allow the solution to adjust to the new grid
-# # bathymetry.
-
-# ocean.Δt = 10
-# ocean.stop_iteration = 1000
-# run!(ocean)
-
-# # ## Run the real simulation
-
-# # Let's reset the maximum number of iterations and we can not increase the time step size
-
-# ocean.Δt = 3minutes
-# ocean.stop_iteration = Inf
-# ocean.stop_time = 100days
-# model = ocean.model
-
-# ocean.output_writers[:surface_fields] = JLD2OutputWriter(model, merge(model.velocities, model.tracers);
-#                                                          indices = (:, :, Nz),
-#                                                          schedule = TimeInterval(1days),
-#                                                          overwrite_existing = true,
-#                                                          filename = "med_surface_field")
-
-# run!(ocean)
+## Running the Simulation
+run!(simulation)
 
 # # Record a video
 # #
