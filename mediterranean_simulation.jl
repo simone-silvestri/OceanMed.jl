@@ -35,6 +35,8 @@ using Dates
 # This section demonstrates the use of the LatitudeLongitudeGrid function to create a grid that matches the
 # Mediterranean's geographical and bathymetric features.
 
+arch = CPU()
+
 λ₁, λ₂  = ( 0, 42) # domain in longitude
 φ₁, φ₂  = (30, 45) # domain in latitude
 
@@ -42,9 +44,8 @@ Nx = 50 * Int(λ₂ - λ₁) # 1/50th of a degree resolution
 Ny = 50 * Int(φ₂ - φ₁) # 1/50th of a degree resolution
 Nz = length(z_faces) - 1
 
-z_faces = exponential_z_faces(; Nz, depth=5000, h=34)
-
-arch = CPU()
+r_faces = exponential_z_faces(; Nz, depth=5000, h=34)
+z_faces = ZStarVerticalCoordinate(r_faces)
 
 # To run on Distributed architectures (for example 4 ranks in x and 4 in y):
 # arch = Distributed(arch, partition = Partition(x = 4, y = 4))
