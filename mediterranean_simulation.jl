@@ -83,8 +83,8 @@ dates = DateTimeProlepticGregorian(1993, 1, 1) : Month(1) : DateTimeProlepticGre
 # This contructor downloads the ECCO dataset in the `dates` range. Make sure you have internet access 
 # and you pass login information to the ECCO donwloader (see https://github.com/CliMA/ClimaOcean.jl/blob/main/src/DataWrangling/ECCO/README.md) 
 # If you have other data to use as restoring we can add a custom backend to use the data.
-FT = ECCORestoring(arch, :temperature; dates, mask=gibraltar_mask, version=ECCO4Monthly(), rate=1/5days)
-FS = ECCORestoring(arch, :salinity;    dates, mask=gibraltar_mask, version=ECCO4Monthly(), rate=1/5days)
+FT = ECCORestoring(:temperature, grid; dates, mask=gibraltar_mask, rate=1/5days)
+FS = ECCORestoring(:salinity, grid;    dates, mask=gibraltar_mask, rate=1/5days)
 
 # The velocities are restored to zero with the same rate in the mask region
 @inline restore_velocity_to_zero(x, y, z, t, vel, rate) = - gibraltar_mask(x, y, z, t) * vel * rate
@@ -97,7 +97,7 @@ Fv = Forcing(restore_velocity_to_zero, field_dependencies=:v, parameters=1/5days
 # We construct an ocean simulation that evolves two tracers, temperature (:T), salinity (:S)
 # and we pass the previously defined forcing that nudge these tracers 
 
-ocean = ocean_simulation(grid; forcing = (T=FT, S=FS, u=Fu, v=Fv))
+ocean = ocean_simulation(grid; forcing=(T=FT, S=FS, u=Fu, v=Fv))
 
 # Initializing the model
 #
@@ -114,7 +114,7 @@ set!(ocean.model, T=ECCOMetadata(:temperature; dates=dates[1]),
 # we use JRA55-do dataset to force the model with surface heat fluxes and wind stress
 # Only 10 time instances of the JRA55 datasets are loaded in memory at each time
 # these are updated as the model progresses
-atmosphere = JRA55_prescribed_atmosphere(arch; backend = JRA55NetCDFBackend(10))
+atmosphere = JRA55PrescribedAtmosphere(arch; backend = JRA55NetCDFBackend(10))
 
 # the skin temperature is computed as a balance of external and internal heat fluxes
 similarity_theory = SimilarityTheoryTurbulentFluxes(grid, surface_temperature_type = SkinTemperature())
