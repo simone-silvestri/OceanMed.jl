@@ -15,7 +15,8 @@
 # These packages provide the foundational tools for creating the simulation environment, 
 # including grid setup, physical processes modeling, and data visualization.
 
-using GLMakie
+# NOT WORKING ON XQUARTZ using GLMakie
+using CairoMakie
 using Oceananigans
 using Oceananigans: architecture
 using ClimaOcean
