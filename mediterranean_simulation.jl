@@ -48,6 +48,9 @@ Nx = 50 * Int(λ₂ - λ₁) # 1/50th of a degree resolution
 Ny = 50 * Int(φ₂ - φ₁) # 1/50th of a degree resolution
 Nz = 60
 
+# Probably you want to change `r_faces` to get the resolution you want 
+# at surface vs depth. This is an Array of size `Nz+1` that defines the 
+# position of the initial position of z-interfaces (when `η = 0`)
 r_faces = exponential_z_faces(; Nz, depth=5000, h=34)
 z_faces = ZStarVerticalCoordinate(r_faces)
 
