@@ -16,6 +16,8 @@
 # including grid setup, physical processes modeling, and data visualization.
 
 # NOT WORKING ON XQUARTZ using GLMakie
+using Pkg 
+Pkg.add("CairoMakie")
 using CairoMakie
 using Oceananigans
 using Oceananigans: architecture
