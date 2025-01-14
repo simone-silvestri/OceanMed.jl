@@ -17,7 +17,8 @@
 
 # NOT WORKING ON XQUARTZ using GLMakie
 using Pkg 
-Pkg.add("CairoMakie")
+#Pkg.add("CairoMakie")
+Pkg.update()
 using CairoMakie
 using Oceananigans
 using Oceananigans: architecture
