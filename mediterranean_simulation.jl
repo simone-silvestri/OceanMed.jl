@@ -17,10 +17,9 @@
 
 # NOT WORKING ON XQUARTZ using GLMakie
 using Pkg 
-#Pkg.add("CairoMakie")
-Pkg.update()
 using CairoMakie
 using Oceananigans
+using Oceananigans.Grids
 using Oceananigans: architecture
 using ClimaOcean
 using ClimaOcean.ECCO
@@ -46,13 +45,13 @@ arch = GPU()
 
 Nx = 50 * Int(λ₂ - λ₁) # 1/50th of a degree resolution
 Ny = 50 * Int(φ₂ - φ₁) # 1/50th of a degree resolution
-Nz = 60
+Nz = 60 # 60 vertical levels
 
 # Probably you want to change `r_faces` to get the resolution you want 
 # at surface vs depth. This is an Array of size `Nz+1` that defines the 
 # position of the initial position of z-interfaces (when `η = 0`)
 r_faces = exponential_z_faces(; Nz, depth=5000, h=34)
-z_faces = ZStarVerticalCoordinate(r_faces)
+z_faces = MutableVerticalDiscretization(r_faces)
 
 # To run on Distributed architectures (for example 4 ranks in x and 4 in y):
 # arch = Distributed(arch, partition = Partition(x = 4, y = 4))
@@ -105,7 +104,10 @@ Fv = Forcing(restore_velocity_to_zero, field_dependencies=:v, parameters=1/5days
 # We construct an ocean simulation that evolves two tracers, temperature (:T), salinity (:S)
 # and we pass the previously defined forcing that nudge these tracers 
 
-ocean = ocean_simulation(grid; forcing=(T=FT, S=FS, u=Fu, v=Fv))
+momentum_advection = WENOVectorInvariant()
+tracer_advection = WENO(order=7)
+
+ocean = ocean_simulation(grid; momentum_advection, tracer_advection, forcing=(T=FT, S=FS, u=Fu, v=Fv))
 
 # Initializing the model
 #
@@ -116,16 +118,15 @@ ocean = ocean_simulation(grid; forcing=(T=FT, S=FS, u=Fu, v=Fv))
 set!(ocean.model, T=ECCOMetadata(:temperature; dates=dates[1]), 
                   S=ECCOMetadata(:salinity;    dates=dates[1]))
 
-
 ## Adding an atmospheric forcing
 
 # we use JRA55-do dataset to force the model with surface heat fluxes and wind stress
 # Only 10 time instances of the JRA55 datasets are loaded in memory at each time
 # these are updated as the model progresses
-atmosphere = JRA55PrescribedAtmosphere(arch; backend = JRA55NetCDFBackend(10))
+atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(10))
 
 # the skin temperature is computed as a balance of external and internal heat fluxes
-similarity_theory = SimilarityTheoryTurbulentFluxes(grid, surface_temperature_type = SkinTemperature())
+similarity_theory = SimilarityTheoryTurbulentFluxes(grid, surface_temperature_type=SkinTemperature())
 
 # This uses a quite simple ocean albedo model (latitude dependent) and 
 # an ocean emissivity of 0.97. It is all customizable
@@ -156,37 +157,37 @@ simulation.callbacks[:progress] = Callback(progress, IterationInterval(10))
 ## Running the Simulation
 run!(simulation)
 
-# # Record a video
-# #
-# # Let's read the data and record a video of the Mediterranean Sea's surface
-# # (1) Zonal velocity (u)
-# # (2) Meridional velocity (v)
-# # (3) Temperature (T)
-# # (4) Salinity (S)
+# Record a video
+#
+# Let's read the data and record a video of the Mediterranean Sea's surface
+# (1) Zonal velocity (u)
+# (2) Meridional velocity (v)
+# (3) Temperature (T)
+# (4) Salinity (S)
 
-# u_series = FieldTimeSeries("med_surface_field.jld2", "u"; backend=OnDisk())
-# v_series = FieldTimeSeries("med_surface_field.jld2", "v"; backend=OnDisk())
-# T_series = FieldTimeSeries("med_surface_field.jld2", "T"; backend=OnDisk())
-# S_series = FieldTimeSeries("med_surface_field.jld2", "S"; backend=OnDisk())
-# iter = Observable(1)
+u_series = FieldTimeSeries("med_surface_field.jld2", "u"; backend=OnDisk())
+v_series = FieldTimeSeries("med_surface_field.jld2", "v"; backend=OnDisk())
+T_series = FieldTimeSeries("med_surface_field.jld2", "T"; backend=OnDisk())
+S_series = FieldTimeSeries("med_surface_field.jld2", "S"; backend=OnDisk())
+iter = Observable(1)
 
-# u = @lift(u_series[$iter])
-# v = @lift(v_series[$iter])
-# T = @lift(T_series[$iter])
-# S = @lift(S_series[$iter])
+u = @lift(u_series[$iter])
+v = @lift(v_series[$iter])
+T = @lift(T_series[$iter])
+S = @lift(S_series[$iter])
 
-# fig = Figure()
-# ax  = Axis(fig[1, 1], title = "surface zonal velocity ms⁻¹")
-# heatmap!(ax, u)
-# ax  = Axis(fig[1, 2], title = "surface meridional velocity ms⁻¹")
-# heatmap!(ax, v)
-# ax  = Axis(fig[2, 1], title = "surface temperature ᵒC")
-# heatmap!(ax, T)
-# ax  = Axis(fig[2, 2], title = "surface salinity psu")
-# heatmap!(ax, S)
+fig = Figure()
+ax  = Axis(fig[1, 1], title = "surface zonal velocity ms⁻¹")
+heatmap!(ax, u)
+ax  = Axis(fig[1, 2], title = "surface meridional velocity ms⁻¹")
+heatmap!(ax, v)
+ax  = Axis(fig[2, 1], title = "surface temperature ᵒC")
+heatmap!(ax, T)
+ax  = Axis(fig[2, 2], title = "surface salinity psu")
+heatmap!(ax, S)
 
-# CairoMakie.record(fig, "mediterranean_video.mp4", 1:length(u_series.times); framerate = 5) do i
-#     @info "recording iteration $i"
-#     iter[] = i    
-# end
-# # ![](mediterranean_video.mp4)
+CairoMakie.record(fig, "mediterranean_video.mp4", 1:length(u_series.times); framerate = 5) do i
+    @info "recording iteration $i"
+    iter[] = i    
+end
+# ![](mediterranean_video.mp4)
