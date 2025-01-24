@@ -19,6 +19,7 @@
 using Pkg
 Pkg.activate(".")
 Pkg.add("StyledStrings")
+Pkg.update("CUDA")
 Pkg.resolve()
 Pkg.instantiate()
 Pkg.gc()  # Rimuove i pacchetti inutilizzati
