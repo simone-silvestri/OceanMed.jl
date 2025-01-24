@@ -21,6 +21,8 @@ Pkg.activate(".")
 Pkg.add("StyledStrings")
 Pkg.resolve()
 Pkg.instantiate()
+Pkg.gc()  # Rimuove i pacchetti inutilizzati
+Pkg.update()  # Aggiorna i pacchetti
 using CairoMakie
 using Oceananigans
 using Oceananigans.Grids
