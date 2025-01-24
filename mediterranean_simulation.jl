@@ -17,8 +17,10 @@
 
 # NOT WORKING ON XQUARTZ using GLMakie
 using Pkg
-Pkg.instantiate()
 Pkg.activate(".")
+Pkg.add("StyledStrings")
+Pkg.resolve()
+Pkg.instantiate()
 using CairoMakie
 using Oceananigans
 using Oceananigans.Grids
