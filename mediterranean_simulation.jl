@@ -18,7 +18,7 @@
 # NOT WORKING ON XQUARTZ using GLMakie
 using Pkg
 Pkg.instantiate()
-Pkg.activate(“.")
+Pkg.activate(".")
 using CairoMakie
 using Oceananigans
 using Oceananigans.Grids
