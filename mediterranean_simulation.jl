@@ -19,8 +19,8 @@
 using Pkg
 Pkg.activate(".")
 Pkg.add("StyledStrings")
-Pkg.update("CUDA")
-Pkg.update("Oceananigans")
+Pkg.add("Oceananigans")
+Pkg.add("CUDA")
 Pkg.resolve()
 Pkg.instantiate()
 Pkg.gc()  # Rimuove i pacchetti inutilizzati
