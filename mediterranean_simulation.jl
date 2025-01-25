@@ -19,6 +19,7 @@
 using Pkg
 Pkg.activate(".")
 Pkg.add("StyledStrings")
+Pkg.add("CairoMakie")
 Pkg.add("Oceananigans")
 Pkg.add("ClimaOcean")
 Pkg.add("CUDA")
