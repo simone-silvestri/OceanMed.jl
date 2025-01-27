@@ -17,15 +17,15 @@
 
 # NOT WORKING ON XQUARTZ using GLMakie
 using Pkg
-Pkg.activate(".")
+#Pkg.activate(".")
 Pkg.add("StyledStrings")
-Pkg.add("CairoMakie")
-Pkg.add("Oceananigans")
-Pkg.add("ClimaOcean")
-Pkg.add("CUDA")
-Pkg.resolve()
-Pkg.instantiate()
-Pkg.gc()  # Rimuove i pacchetti inutilizzati
+#Pkg.add("CairoMakie")
+#Pkg.add("Oceananigans")
+#Pkg.add("ClimaOcean")
+#Pkg.add("CUDA")
+#Pkg.resolve()
+#Pkg.instantiate()
+#Pkg.gc()  # Rimuove i pacchetti inutilizzati
 Pkg.update()  # Aggiorna i pacchetti
 using CairoMakie
 using Oceananigans
@@ -48,14 +48,14 @@ using Dates
 # This section demonstrates the use of the LatitudeLongitudeGrid function to create a grid that matches the
 # Mediterranean's geographical and bathymetric features.
 
-arch = CPU()
+arch = GPU()
 
 λ₁, λ₂  = ( 0, 42) # domain in longitude
 φ₁, φ₂  = (30, 45) # domain in latitude
 
-Nx = 1 * Int(λ₂ - λ₁) # 1/50th of a degree resolution
-Ny = 1 * Int(φ₂ - φ₁) # 1/50th of a degree resolution
-Nz = 10 # 60 vertical levels
+Nx = 10 * Int(λ₂ - λ₁) # 1/50th of a degree resolution
+Ny = 10 * Int(φ₂ - φ₁) # 1/50th of a degree resolution
+Nz = 60 # 60 vertical levels
 
 # Probably you want to change `r_faces` to get the resolution you want 
 # at surface vs depth. This is an Array of size `Nz+1` that defines the 
