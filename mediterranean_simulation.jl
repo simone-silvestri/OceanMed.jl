@@ -17,7 +17,7 @@
 
 # NOT WORKING ON XQUARTZ using GLMakie
 using Pkg
-#Pkg.activate(".")
+Pkg.activate(".")
 #Pkg.add("StyledStrings")
 #Pkg.add("CairoMakie")
 #Pkg.add("Oceananigans")
