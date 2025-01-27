@@ -48,14 +48,14 @@ using Dates
 # This section demonstrates the use of the LatitudeLongitudeGrid function to create a grid that matches the
 # Mediterranean's geographical and bathymetric features.
 
-arch = GPU()
+arch = CPU()
 
 λ₁, λ₂  = ( 0, 42) # domain in longitude
 φ₁, φ₂  = (30, 45) # domain in latitude
 
-Nx = 50 * Int(λ₂ - λ₁) # 1/50th of a degree resolution
-Ny = 50 * Int(φ₂ - φ₁) # 1/50th of a degree resolution
-Nz = 60 # 60 vertical levels
+Nx = 1 * Int(λ₂ - λ₁) # 1/50th of a degree resolution
+Ny = 1 * Int(φ₂ - φ₁) # 1/50th of a degree resolution
+Nz = 10 # 60 vertical levels
 
 # Probably you want to change `r_faces` to get the resolution you want 
 # at surface vs depth. This is an Array of size `Nz+1` that defines the 
