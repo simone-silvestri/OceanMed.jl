@@ -94,10 +94,20 @@ FT = ECCORestoring(:temperature, grid; dates, mask=gibraltar_mask, rate=1/5days)
 FS = ECCORestoring(:salinity, grid;    dates, mask=gibraltar_mask, rate=1/5days)
 
 # The velocities are restored to zero with the same rate in the mask region
-@inline restore_velocity_to_zero(x, y, z, t, vel, rate) = - gibraltar_mask(x, y, z, t) * vel * rate
+@inline function restore_u_to_zero(i, j, k, grid, clock, fields, rate) 
+    x, y, z = node(i, j, k, grid, Face(), Center(), Center()) 
+    vel = @inbounds fields.u[i, j, k]
+    return - gibraltar_mask(x, y, z, 1) * vel * rate
+end
 
-Fu = Forcing(restore_velocity_to_zero, field_dependencies=:u, parameters=1/5days)
-Fv = Forcing(restore_velocity_to_zero, field_dependencies=:v, parameters=1/5days)
+@inline function restore_v_to_zero(i, j, k, grid, clock, fields, rate) 
+    x, y, z = node(i, j, k, grid, Center(), CFace(), enter()) 
+    vel = @inbounds fields.uv[i, j, k]
+    return - gibraltar_mask(x, y, z, 1) * vel * rate
+end
+
+Fu = Forcing(restore_u_to_zero, discrete_form=true, parameters=1/5days)
+Fv = Forcing(restore_v_to_zero, discrete_form=true, parameters=1/5days)
 
 # Constructing the Simulation
 #
