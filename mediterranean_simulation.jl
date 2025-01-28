@@ -175,6 +175,14 @@ end
 
 simulation.callbacks[:progress] = Callback(progress, IterationInterval(10))
 
+earth.output_writers[:surface_fields] = JLD2OutputWriter(ocean.model, merge(ocean.model.tracers, ocean.model.velocities),
+                                                         schedule = TimeInterval(6hours),
+                                                         indices = (:, :, grid.Nz),
+                                                         overwrite_existing = true,
+                                                         filename = "med_surface_fields.jld2")
+
+
+
 ## Running the Simulation
 run!(simulation)
 
