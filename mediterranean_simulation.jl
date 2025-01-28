@@ -175,6 +175,10 @@ end
 
 simulation.callbacks[:progress] = Callback(progress, IterationInterval(10))
 
+# Definizione di `earth` come contenitore degli output
+earth = Dict(:output_writers => Dict())
+
+
 earth.output_writers[:surface_fields] = JLD2OutputWriter(ocean.model, merge(ocean.model.tracers, ocean.model.velocities),
                                                          schedule = TimeInterval(6hours),
                                                          indices = (:, :, grid.Nz),
