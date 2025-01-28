@@ -18,11 +18,11 @@
 # NOT WORKING ON XQUARTZ using GLMakie
 using Pkg
 Pkg.activate(".")
-#Pkg.add("StyledStrings")
-#Pkg.add("CairoMakie")
-#Pkg.add("Oceananigans")
-#Pkg.add("ClimaOcean")
-#Pkg.add("CUDA")
+Pkg.add("StyledStrings")
+Pkg.add("CairoMakie")
+Pkg.add("Oceananigans")
+Pkg.add("ClimaOcean")
+Pkg.add("CUDA")
 Pkg.resolve()
 Pkg.instantiate()
 #Pkg.gc()  # Rimuove i pacchetti inutilizzati
