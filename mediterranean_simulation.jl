@@ -111,7 +111,7 @@ FS = ECCORestoring(:salinity, grid;    dates, mask=gibraltar_mask, rate=1/5days)
 end
 
 @inline function restore_v_to_zero(i, j, k, grid, clock, fields, rate) 
-    x, y, z = node(i, j, k, grid, Center(), CFace(), enter()) 
+    x, y, z = node(i, j, k, grid, Center(), Face(), Center()) 
     vel = @inbounds fields.uv[i, j, k]
     return - gibraltar_mask(x, y, z, 1) * vel * rate
 end
