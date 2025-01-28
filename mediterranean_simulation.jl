@@ -112,9 +112,10 @@ end
 
 @inline function restore_v_to_zero(i, j, k, grid, clock, fields, rate) 
     x, y, z = node(i, j, k, grid, Center(), Face(), Center()) 
-    vel = @inbounds fields.uv[i, j, k]
+    vel = @inbounds fields.v[i, j, k]
     return - gibraltar_mask(x, y, z, 1) * vel * rate
 end
+
 
 Fu = Forcing(restore_u_to_zero, discrete_form=true, parameters=1/5days)
 Fv = Forcing(restore_v_to_zero, discrete_form=true, parameters=1/5days)
