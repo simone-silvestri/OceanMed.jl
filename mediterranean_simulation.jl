@@ -22,7 +22,7 @@ Pkg.add("StyledStrings")
 #Pkg.add("CairoMakie")
 Pkg.add("Oceananigans")
 Pkg.add("ClimaOcean")
-#Pkg.add("CUDA")
+Pkg.add("CUDA")
 Pkg.resolve()
 Pkg.instantiate()
 #Pkg.gc()  # Rimuove i pacchetti inutilizzati
