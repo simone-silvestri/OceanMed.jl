@@ -40,6 +40,8 @@ using Printf
 using CFTime
 using Dates
 
+@show earth
+
 # ## Grid Configuration for the Mediterranean Sea
 #
 # The script defines a high-resolution grid to represent the Mediterranean Sea, specifying the domain in terms of longitude (λ₁, λ₂), 
