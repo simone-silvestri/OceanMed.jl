@@ -159,8 +159,9 @@ radiation = Radiation()
 coupled_model = OceanSeaIceModel(ocean; atmosphere, similarity_theory, radiation)
 
 # The coupled simulation:
-Δt = 2minutes
-stop_time = 30days
+#Δt = 2minutes
+Δt = 4minutes
+stop_time = 180days
 simulation = Simulation(coupled_model; Δt, stop_time)
 
 function progress(sim) 
@@ -186,8 +187,17 @@ simulation.callbacks[:progress] = Callback(progress, IterationInterval(10))
 #                                                         filename = "med_surface_fields.jld2")
 #
 
+#Versione con uscite ogni 6 ore
+#ocean.output_writers[:surface_fields] = JLD2OutputWriter(ocean.model, merge(ocean.model.tracers, ocean.model.velocities),
+#                                                         schedule = TimeInterval(6hours),
+#                                                         indices = (:, :, grid.Nz),
+#                                                         overwrite_existing = true,
+#                                                         filename = "med_surface_fields.jld2")
+
+
+#Versione con uscite ogni 24 ore
 ocean.output_writers[:surface_fields] = JLD2OutputWriter(ocean.model, merge(ocean.model.tracers, ocean.model.velocities),
-                                                         schedule = TimeInterval(6hours),
+                                                         schedule = TimeInterval(24hours),
                                                          indices = (:, :, grid.Nz),
                                                          overwrite_existing = true,
                                                          filename = "med_surface_fields.jld2")
