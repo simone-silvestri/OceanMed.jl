@@ -92,7 +92,9 @@ grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_
 # This allows us to nudge the model towards realistic temperature and salinity profiles.
 # `ECCORestoring` accepts a `mask` keyword argument to restrict the restoring region.
 
-@inline gibraltar_mask(x, y, z, t) = min(max(0, 5 - y), 1)
+λₑ = - 7 # eastern bound of the restoring region
+
+@inline gibraltar_mask(λ, φ, z, t) = max(0, 1 / (λ₁ - λₑ) * (λ - λₑ))
 
 dates = DateTime(1993, 1, 1) : Month(1) : DateTime(1993, 5, 1)
 
@@ -102,22 +104,6 @@ dates = DateTime(1993, 1, 1) : Month(1) : DateTime(1993, 5, 1)
 FT = ECCORestoring(:temperature, arch; dates, mask=gibraltar_mask, rate=1/5days)
 FS = ECCORestoring(:salinity, arch;    dates, mask=gibraltar_mask, rate=1/5days)
 
-# The velocities are restored to zero with the same rate in the mask region
-@inline function restore_u_to_zero(i, j, k, grid, clock, fields, rate) 
-    x, y, z = node(i, j, k, grid, Face(), Center(), Center()) 
-    vel = @inbounds fields.u[i, j, k]
-    return - gibraltar_mask(x, y, z, 1) * vel * rate
-end
-
-@inline function restore_v_to_zero(i, j, k, grid, clock, fields, rate) 
-    x, y, z = node(i, j, k, grid, Center(), Face(), Center()) 
-    vel = @inbounds fields.v[i, j, k]
-    return - gibraltar_mask(x, y, z, 1) * vel * rate
-end
-
-Fu = Forcing(restore_u_to_zero, discrete_form=true, parameters=1/5days)
-Fv = Forcing(restore_v_to_zero, discrete_form=true, parameters=1/5days)
-
 # Constructing the Simulation
 #
 # We construct an ocean simulation that evolves two tracers, temperature (:T), salinity (:S)
@@ -126,7 +112,7 @@ Fv = Forcing(restore_v_to_zero, discrete_form=true, parameters=1/5days)
 momentum_advection = WENOVectorInvariant()
 tracer_advection = WENO(order=7)
 
-ocean = ocean_simulation(grid; momentum_advection, tracer_advection, forcing=(T=FT, S=FS, u=Fu, v=Fv))
+ocean = ocean_simulation(grid; momentum_advection, tracer_advection, forcing=(T=FT, S=FS))
 
 # Initializing the model
 #
@@ -152,8 +138,8 @@ radiation = Radiation()
 coupled_model = OceanSeaIceModel(ocean; atmosphere, radiation)
 
 # The coupled simulation:
-#Δt = 2minutes
-Δt = 4minutes
+Δt = 1minutes
+# Δt = 4minutes
 stop_time = 180days
 simulation = Simulation(coupled_model; Δt, stop_time)
 
