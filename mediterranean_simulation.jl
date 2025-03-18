@@ -36,7 +36,7 @@ using ClimaOcean.ECCO
 using ClimaOcean.ECCO: ECCO4Monthly
 using Oceananigans.Units
 using Printf
-
+using NCDatasets
 using Dates
 
 # ## Grid Configuration for the Mediterranean Sea
@@ -49,17 +49,23 @@ using Dates
 
 arch = GPU()
 
-const λ₁, λ₂  = (-8.6, 42)   # domain in longitude
-const φ₁, φ₂  = (  30, 46) # domain in latitude
+const λ₁, λ₂  = (-8.6, 42) # domain in longitude
+const φ₁, φ₂  = (  30, 48) # domain in latitude
 
-Nx = 40 * Int(λ₂ - λ₁) # 1/50th of a degree resolution
-Ny = 40 * Int(φ₂ - φ₁) # 1/50th of a degree resolution
-Nz = 75 # 60 vertical levels
+Nx = 30 * ceil(Int, λ₂ - λ₁) # 1/50th of a degree resolution
+Ny = 30 * ceil(Int, φ₂ - φ₁) # 1/50th of a degree resolution
+Nz = 140 # 140 vertical levels
 
 # Probably you want to change `r_faces` to get the resolution you want 
 # at surface vs depth. This is an Array of size `Nz+1` that defines the 
 # position of the initial position of z-interfaces (when `η = 0`)
-r_faces = exponential_z_faces(; Nz, depth=5000, h=34)
+ds = Dataset("data/zc_copernicus.nc")
+r_centers = reverse(ds["depth"][:])
+r_faces   = zeros(Nz+1)
+for k in Nz:-1:1
+  r_faces[k] = r_faces[k+1] - (r_centers[k] + r_faces[k+1]) * 2
+end
+
 z_faces = MutableVerticalDiscretization(r_faces)
 
 # To run on Distributed architectures (for example 4 ranks in x and 4 in y):
@@ -79,7 +85,7 @@ grid = LatitudeLongitudeGrid(arch;
 # are adjusted to refine the bathymetry representation.
 
 bottom_height = regrid_bathymetry(grid, 
-                                  minimum_depth = 10,
+                                  minimum_depth = 5,
                                   interpolation_passes = 1,
                                   major_basins = 1)
 
@@ -94,15 +100,15 @@ grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_
 
 const λₑ = - 7 # eastern bound of the restoring region
 
-@inline gibraltar_mask(λ, φ, z, t) = max(0, 1 / (λ₁ - λₑ) * (λ - λₑ))
+@inline gibraltar_mask(λ, φ, z, t) = min(1.0, max(0.0, 1 / (λ₁ - λₑ) * (λ - λₑ)))
 
 dates = DateTime(1993, 1, 1) : Month(1) : DateTime(1993, 5, 1)
 
 # This contructor downloads the ECCO dataset in the `dates` range. Make sure you have internet access 
 # and you pass login information to the ECCO donwloader (see https://github.com/CliMA/ClimaOcean.jl/blob/main/src/DataWrangling/ECCO/README.md) 
 # If you have other data to use as restoring we can add a custom backend to use the data.
-FT = ECCORestoring(:temperature, arch; dates, mask=gibraltar_mask, rate=1/5days)
-FS = ECCORestoring(:salinity, arch;    dates, mask=gibraltar_mask, rate=1/5days)
+FT = ECCORestoring(:temperature, arch; dates, mask=gibraltar_mask, rate=1/10days)
+FS = ECCORestoring(:salinity, arch;    dates, mask=gibraltar_mask, rate=1/10days)
 
 # Constructing the Simulation
 #
@@ -128,7 +134,7 @@ set!(ocean.model, T=Metadata(:temperature; dates=dates[1], dataset=ECCO4Monthly(
 # we use JRA55-do dataset to force the model with surface heat fluxes and wind stress
 # Only 10 time instances of the JRA55 datasets are loaded in memory at each time
 # these are updated as the model progresses
-atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(10))
+atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(10), include_rivers_and_icebergs=true, dir="./data")
 
 # This uses a quite simple ocean albedo model (latitude dependent) and 
 # an ocean emissivity of 0.97. It is all customizable
@@ -138,9 +144,9 @@ radiation = Radiation()
 coupled_model = OceanSeaIceModel(ocean; atmosphere, radiation)
 
 # The coupled simulation:
-Δt = 1minutes
+Δt = 10
 # Δt = 4minutes
-stop_time = 180days
+stop_time = 30days
 simulation = Simulation(coupled_model; Δt, stop_time)
 
 function progress(sim) 
@@ -157,13 +163,6 @@ end
 
 simulation.callbacks[:progress] = Callback(progress, IterationInterval(10))
 
-simulation.output_writers[:surface_fields] = JLD2OutputWriter(ocean.model, merge(ocean.model.tracers, ocean.model.velocities),
-                                                             schedule = TimeInterval(6hours),
-                                                             indices = (:, :, grid.Nz),
-                                                             overwrite_existing = true,
-                                                             filename = "med_surface_fields.jld2")
-
-
 #Versione con uscite ogni 24 ore
 simulation.output_writers[:surface_fields] = JLD2OutputWriter(ocean.model, merge(ocean.model.tracers, ocean.model.velocities),
                                                               schedule = TimeInterval(24hours),
@@ -172,6 +171,10 @@ simulation.output_writers[:surface_fields] = JLD2OutputWriter(ocean.model, merge
                                                               filename = "med_surface_fields.jld2")
 
 
+simulation.output_writers[:checkpointer] = Checkpointer(ocean.model, 
+							schedule = TimeInterval(30days),
+							overwrite_existing = true,
+							prefix = "mediterranean")
 
 ## Running the Simulation
 run!(simulation)
