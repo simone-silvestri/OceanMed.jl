@@ -49,8 +49,8 @@ using Dates
 
 arch = GPU()
 
-λ₁, λ₂  = (-8.6, 42)   # domain in longitude
-φ₁, φ₂  = (  30, 46) # domain in latitude
+const λ₁, λ₂  = (-8.6, 42)   # domain in longitude
+const φ₁, φ₂  = (  30, 46) # domain in latitude
 
 Nx = 40 * Int(λ₂ - λ₁) # 1/50th of a degree resolution
 Ny = 40 * Int(φ₂ - φ₁) # 1/50th of a degree resolution
@@ -92,7 +92,7 @@ grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_
 # This allows us to nudge the model towards realistic temperature and salinity profiles.
 # `ECCORestoring` accepts a `mask` keyword argument to restrict the restoring region.
 
-λₑ = - 7 # eastern bound of the restoring region
+const λₑ = - 7 # eastern bound of the restoring region
 
 @inline gibraltar_mask(λ, φ, z, t) = max(0, 1 / (λ₁ - λₑ) * (λ - λₑ))
 
