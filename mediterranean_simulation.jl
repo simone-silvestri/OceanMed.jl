@@ -50,10 +50,10 @@ using Dates
 arch = GPU()
 
 const λ₁, λ₂  = (-8.6, 42) # domain in longitude
-const φ₁, φ₂  = (  30, 46) # domain in latitude
+const φ₁, φ₂  = (  30, 48) # domain in latitude
 
-Nx = 40 * Int(λ₂ - λ₁) # 1/50th of a degree resolution
-Ny = 40 * Int(φ₂ - φ₁) # 1/50th of a degree resolution
+Nx = 30 * ceil(Int, λ₂ - λ₁) # 1/50th of a degree resolution
+Ny = 30 * ceil(Int, φ₂ - φ₁) # 1/50th of a degree resolution
 Nz = 140 # 140 vertical levels
 
 # Probably you want to change `r_faces` to get the resolution you want 
@@ -100,7 +100,7 @@ grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_
 
 const λₑ = - 7 # eastern bound of the restoring region
 
-@inline gibraltar_mask(λ, φ, z, t) = max(0, 1 / (λ₁ - λₑ) * (λ - λₑ))
+@inline gibraltar_mask(λ, φ, z, t) = min(1.0, max(0.0, 1 / (λ₁ - λₑ) * (λ - λₑ)))
 
 dates = DateTime(1993, 1, 1) : Month(1) : DateTime(1993, 5, 1)
 
@@ -134,7 +134,7 @@ set!(ocean.model, T=Metadata(:temperature; dates=dates[1], dataset=ECCO4Monthly(
 # we use JRA55-do dataset to force the model with surface heat fluxes and wind stress
 # Only 10 time instances of the JRA55 datasets are loaded in memory at each time
 # these are updated as the model progresses
-atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(10))
+atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(10), include_rivers_and_icebergs=true, dir="./data")
 
 # This uses a quite simple ocean albedo model (latitude dependent) and 
 # an ocean emissivity of 0.97. It is all customizable
@@ -144,9 +144,9 @@ radiation = Radiation()
 coupled_model = OceanSeaIceModel(ocean; atmosphere, radiation)
 
 # The coupled simulation:
-Δt = 1minutes
+Δt = 20
 # Δt = 4minutes
-stop_time = 180days
+stop_time = 30days
 simulation = Simulation(coupled_model; Δt, stop_time)
 
 function progress(sim) 
