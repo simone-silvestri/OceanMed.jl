@@ -107,8 +107,8 @@ dates = DateTime(1993, 1, 1) : Month(1) : DateTime(1993, 5, 1)
 # This contructor downloads the ECCO dataset in the `dates` range. Make sure you have internet access 
 # and you pass login information to the ECCO donwloader (see https://github.com/CliMA/ClimaOcean.jl/blob/main/src/DataWrangling/ECCO/README.md) 
 # If you have other data to use as restoring we can add a custom backend to use the data.
-FT = ECCORestoring(:temperature, arch; dates, mask=gibraltar_mask, rate=1/5days)
-FS = ECCORestoring(:salinity, arch;    dates, mask=gibraltar_mask, rate=1/5days)
+FT = ECCORestoring(:temperature, arch; dates, mask=gibraltar_mask, rate=1/10days)
+FS = ECCORestoring(:salinity, arch;    dates, mask=gibraltar_mask, rate=1/10days)
 
 # Constructing the Simulation
 #
@@ -144,7 +144,7 @@ radiation = Radiation()
 coupled_model = OceanSeaIceModel(ocean; atmosphere, radiation)
 
 # The coupled simulation:
-Δt = 20
+Δt = 10
 # Δt = 4minutes
 stop_time = 30days
 simulation = Simulation(coupled_model; Δt, stop_time)
@@ -163,13 +163,6 @@ end
 
 simulation.callbacks[:progress] = Callback(progress, IterationInterval(10))
 
-simulation.output_writers[:surface_fields] = JLD2OutputWriter(ocean.model, merge(ocean.model.tracers, ocean.model.velocities),
-                                                             schedule = TimeInterval(6hours),
-                                                             indices = (:, :, grid.Nz),
-                                                             overwrite_existing = true,
-                                                             filename = "med_surface_fields.jld2")
-
-
 #Versione con uscite ogni 24 ore
 simulation.output_writers[:surface_fields] = JLD2OutputWriter(ocean.model, merge(ocean.model.tracers, ocean.model.velocities),
                                                               schedule = TimeInterval(24hours),
@@ -178,6 +171,10 @@ simulation.output_writers[:surface_fields] = JLD2OutputWriter(ocean.model, merge
                                                               filename = "med_surface_fields.jld2")
 
 
+simulation.output_writers[:checkpointer] = Checkpointer(ocean.model, 
+							schedule = TimeInterval(30days),
+							overwrite_existing = true,
+							prefix = "mediterranean")
 
 ## Running the Simulation
 run!(simulation)
