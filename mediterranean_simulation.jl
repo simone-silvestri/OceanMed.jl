@@ -36,7 +36,7 @@ using ClimaOcean.ECCO
 using ClimaOcean.ECCO: ECCO4Monthly
 using Oceananigans.Units
 using Printf
-
+using NCDatasets
 using Dates
 
 # ## Grid Configuration for the Mediterranean Sea
@@ -49,17 +49,23 @@ using Dates
 
 arch = GPU()
 
-const λ₁, λ₂  = (-8.6, 42)   # domain in longitude
+const λ₁, λ₂  = (-8.6, 42) # domain in longitude
 const φ₁, φ₂  = (  30, 46) # domain in latitude
 
 Nx = 40 * Int(λ₂ - λ₁) # 1/50th of a degree resolution
 Ny = 40 * Int(φ₂ - φ₁) # 1/50th of a degree resolution
-Nz = 75 # 60 vertical levels
+Nz = 140 # 140 vertical levels
 
 # Probably you want to change `r_faces` to get the resolution you want 
 # at surface vs depth. This is an Array of size `Nz+1` that defines the 
 # position of the initial position of z-interfaces (when `η = 0`)
-r_faces = exponential_z_faces(; Nz, depth=5000, h=34)
+ds = Dataset("data/zc_copernicus.nc")
+r_centers = reverse(ds["depth"][:])
+r_faces   = zeros(Nz+1)
+for k in Nz:-1:1
+  r_faces[k] = r_faces[k+1] - (r_centers[k] + r_faces[k+1]) * 2
+end
+
 z_faces = MutableVerticalDiscretization(r_faces)
 
 # To run on Distributed architectures (for example 4 ranks in x and 4 in y):
@@ -79,7 +85,7 @@ grid = LatitudeLongitudeGrid(arch;
 # are adjusted to refine the bathymetry representation.
 
 bottom_height = regrid_bathymetry(grid, 
-                                  minimum_depth = 10,
+                                  minimum_depth = 5,
                                   interpolation_passes = 1,
                                   major_basins = 1)
 
