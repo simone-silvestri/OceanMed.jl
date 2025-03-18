@@ -3,3 +3,7 @@
 *.png
 *.jld2
 *.mp4
+test*
+*.out
+*.err
+*.gpu

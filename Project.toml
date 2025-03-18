@@ -8,3 +8,6 @@ MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195"
 MPIPreferences = "3da0fdf6-3ccc-4f1b-acd9-58baa6c99267"
 Oceananigans = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
 StyledStrings = "f489334b-da3d-4c2e-b8f0-e476e12c162b"
+
+[extras]
+CUDA_Runtime_jll = "76a88914-d11a-5bdc-97e0-2f5a05c973a2"

@@ -17,16 +17,9 @@
 
 # NOT WORKING ON XQUARTZ using GLMakie
 using Pkg
-#Pkg.activate(".")
-#Pkg.add("StyledStrings")
-#Pkg.add("CairoMakie")
-#Pkg.add("Oceananigans")
-#Pkg.add("ClimaOcean")
-#Pkg.add("CUDA")
-#Pkg.resolve()
-#Pkg.instantiate()
-#Pkg.gc()  # Rimuove i pacchetti inutilizzati
-#Pkg.update()  # Aggiorna i pacchetti
+using MPI
+MPI.Init()
+
 using CairoMakie
 using Oceananigans
 using Oceananigans.Grids
@@ -47,13 +40,30 @@ using Dates
 # This section demonstrates the use of the LatitudeLongitudeGrid function to create a grid that matches the
 # Mediterranean's geographical and bathymetric features.
 
-arch = GPU()
+# To find the optimal partitioning strategy, cut the domain trying to have the same
+# number of fluid (active) cells in the domain.
+# An example of how to do this is in 
+# https://github.com/simone-silvestri/OceanScalingTests.jl/blob/main/src/grid_load_balance.jl
+# 
+# To have unevening partitioning in Oceananigans the syntax is 
+# using Oceananigans.DistributedComputations: Sizes
+# s = Sizes(n1, n2, n3, n4) # For example for 4 ranks
+# arch = Distributed(GPU(), partition=Partition(x = s, y = 2)) # Note!!!! n1 + n2 + n3 + n4 should be == Nx!!!
+# 
+# Another option is
+# f = Fractional(1/3, 1/2, ...)
+# arch = Distributed(GPU(), partition=Partition(x = f, y = 2))
+
+# synchronized_communication is because vertical mixing does not work with pipelining
+@info "Initializing architecture"
+
+arch = Distributed(GPU(), partition=Partition(4, 2), synchronized_communication=true) 
 
 const λ₁, λ₂  = (-8.6, 42) # domain in longitude
 const φ₁, φ₂  = (  30, 48) # domain in latitude
 
-Nx = 30 * ceil(Int, λ₂ - λ₁) # 1/50th of a degree resolution
-Ny = 30 * ceil(Int, φ₂ - φ₁) # 1/50th of a degree resolution
+Nx = 72 * ceil(Int, λ₂ - λ₁) # 1/50th of a degree resolution
+Ny = 72 * ceil(Int, φ₂ - φ₁) # 1/50th of a degree resolution
 Nz = 140 # 140 vertical levels
 
 # Probably you want to change `r_faces` to get the resolution you want 
@@ -70,6 +80,8 @@ z_faces = MutableVerticalDiscretization(r_faces)
 
 # To run on Distributed architectures (for example 4 ranks in x and 4 in y):
 # arch = Distributed(arch, partition = Partition(x = 4, y = 4))
+
+@info "Building grid variable"
 
 grid = LatitudeLongitudeGrid(arch;
                              size = (Nx, Ny, Nz),
@@ -116,10 +128,7 @@ FS = ECCORestoring(:salinity, arch;    dates, mask=gibraltar_mask, rate=1/10days
 # and we pass the previously defined forcing that nudge these tracers 
 
 momentum_advection = WENOVectorInvariant()
-high_order = WENO(order=7)
-low_order  = Centered()
-
-tracer_advection = FluxForm(high_order, high_order, low_order)
+tracer_advection = WENO(order=7)
 
 ocean = ocean_simulation(grid; momentum_advection, tracer_advection, forcing=(T=FT, S=FS))
 
@@ -148,42 +157,46 @@ coupled_model = OceanSeaIceModel(ocean; atmosphere, radiation)
 
 # The coupled simulation:
 Δt = 10
-stop_time = 5days
+# Δt = 4minutes
+stop_time = 30days
 simulation = Simulation(coupled_model; Δt, stop_time)
+
+wall_time = Ref(time_ns())
 
 function progress(sim) 
     u, v, w = sim.model.ocean.model.velocities
     T, S = sim.model.ocean.model.tracers
+    rank = arch.local_rank
 
-    @info @sprintf("Time: %s, Iteration %d, Δt %s, max(vel): (%.2e, %.2e, %.2e), max(T, S): %.2f, %.2f\n",
+    step_time = (time_ns() - wall_time) * 1e-9
+    @info @sprintf("Time: %s, rank: %d, step_time: %s, Iteration %d, Δt %s, max(vel): (%.2e, %.2e, %.2e), max(T, S): %.2f, %.2f\n",
                    prettytime(sim.model.clock.time),
-                   sim.model.clock.iteration,
+                   rank,
+		   prettytime(step_time),
+		   sim.model.clock.iteration,
                    prettytime(sim.Δt),
                    maximum(abs, u), maximum(abs, v), maximum(abs, w),
                    maximum(abs, T), maximum(abs, S))
+ 
+    wall_time[] = time_ns()       
 end
 
 simulation.callbacks[:progress] = Callback(progress, IterationInterval(10))
 
-#Versione con uscite ogni 24 ore
+# Versione con uscite ogni 24 ore
 simulation.output_writers[:surface_fields] = JLD2OutputWriter(ocean.model, merge(ocean.model.tracers, ocean.model.velocities),
                                                               schedule = TimeInterval(24hours),
                                                               indices = (:, :, grid.Nz),
                                                               overwrite_existing = true,
-                                                              filename = "med_surface_fields.jld2")
+                                                              filename = "distributed_med_surface_fields.jld2")
 
 
 simulation.output_writers[:checkpointer] = Checkpointer(ocean.model, 
 							schedule = TimeInterval(30days),
 							overwrite_existing = true,
-							prefix = "mediterranean")
+							prefix = "distributed_mediterranean")
 
 ## Running the Simulation
-run!(simulation)
-
-simulation.Δt = 1minute
-simulation.stop_time = 365days
-
 run!(simulation)
 
 # Record a video
