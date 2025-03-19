@@ -39,6 +39,8 @@ using Printf
 using NCDatasets
 using Dates
 
+include("vertical_diffusivity.jl")
+
 # ## Grid Configuration for the Mediterranean Sea
 #
 # The script defines a high-resolution grid to represent the Mediterranean Sea, specifying the domain in terms of longitude (λ₁, λ₂), 
@@ -117,8 +119,15 @@ FS = ECCORestoring(:salinity, arch;    dates, mask=gibraltar_mask, rate=1/10days
 
 momentum_advection = WENOVectorInvariant()
 tracer_advection = WENO(order=7)
+closure = CalibratedRiBasedVerticalDiffusivity()
+timestepper = :SplitRungeKutta3
 
-ocean = ocean_simulation(grid; momentum_advection, tracer_advection, forcing=(T=FT, S=FS))
+ocean = ocean_simulation(grid; 
+                         timestepper, 
+                         momentum_advection, 
+                         tracer_advection, 
+                         closure, 
+                         forcing=(T=FT, S=FS))
 
 # Initializing the model
 #

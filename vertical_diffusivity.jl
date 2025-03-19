@@ -228,8 +228,8 @@ end
     κ_nonlocal = ifelse(entraining,  ν_nonlocal / Prs, 0)
 
     # Update by averaging in time
-    @inbounds diffusivities.κᵘ[i, j, k] = ν_local + ν_nonlocal
-    @inbounds diffusivities.κᶜ[i, j, k] = κ_local + κ_nonlocal
-
+    @inbounds diffusivities.κc[i, j, k] = κ_local + κ_nonlocal
+    @inbounds diffusivities.κu[i, j, k] = ν_local + ν_nonlocal
+    
     return nothing
 end
