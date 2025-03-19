@@ -24,6 +24,7 @@ using CairoMakie
 using Oceananigans
 using Oceananigans.Grids
 using Oceananigans: architecture
+using Oceananigans.Advection: FluxFormAdvection
 using ClimaOcean
 using ClimaOcean.ECCO
 using ClimaOcean.ECCO: ECCO4Monthly
@@ -128,9 +129,16 @@ FS = ECCORestoring(:salinity, arch;    dates, mask=gibraltar_mask, rate=1/10days
 # and we pass the previously defined forcing that nudge these tracers 
 
 momentum_advection = WENOVectorInvariant()
-tracer_advection = WENO(order=7)
+tracer_advection = FluxFormAdvection(high_order, high_order, low_order)
+closure = CalibratedRiBasedVerticalDiffusivity()
+timestepper = :SplitRungeKutta3
 
-ocean = ocean_simulation(grid; momentum_advection, tracer_advection, forcing=(T=FT, S=FS))
+ocean = ocean_simulation(grid; 
+                         timestepper,
+                         momentum_advection,
+                         tracer_advection,
+                         closure,
+                         forcing=(T=FT, S=FS))
 
 # Initializing the model
 #
