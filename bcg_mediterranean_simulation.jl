@@ -29,6 +29,9 @@ using Printf
 using NCDatasets
 using Dates
 
+# ##
+using OceanBiome
+
 include("vertical_diffusivity.jl")
 
 # ## Grid Configuration for the Mediterranean Sea
@@ -112,39 +115,56 @@ tracer_advection = WENO(order=7)
 closure = nothing
 timestepper = :SplitRungeKutta3
 
+# ## Biogeochemistry test: fdattilo
 using Oceananigans.Biogeochemistry: AbstractBiogeochemistry
 
-struct DtlBiogeochemistry{P1, P2, P3} <: AbstractBiogeochemistry
+#= struct DtlBiogeochemistry{P1, P2, P3} <: AbstractBiogeochemistry
     par1 :: P1
     par2 :: P2
     par3 :: P3
-end
+end 
 
 import Oceananigans.Biogeochemistry: required_biogeochemical_tracers
 
-required_biogeochemical_tracers(::DtlBiogeochemistry) = (:ph, :alk)
+required_biogeochemical_tracers(::DtlBiogeochemistry) = (:ph, :alk)=#
+# ## Setting the biogeochemistry
+bgc = LOBSTER(; grid,
+                carbonate = false, # set true if you want CO₂ boundary conditions
+                oxygen = false,
 
+)
+# ## consider to ad CO₂_flux  as boundary condition
+# CO₂_flux = CarbonDioxideGasExchangeBoundaryCondition()
 ocean = ocean_simulation(grid; 
                          timestepper, 
                          momentum_advection, 
                          tracer_advection, 
                          closure, 
-                         biogeochemistry = DtlBiogeochemistry(1, 2, 3),
-                         forcing=(T=FT, S=FS))
+                         biogeochemistry = bgc,#DtlBiogeochemistry(1, 2, 3),
+                         forcing=(T=FT, S=FS)#,
+                         #boundary_conditions = (DIC = FieldBoundaryConditions(top = CO₂_flux), )
+                         )
 
 ####
 #### Initialize the ph and alkalinity
 ####
 
 # load the dataset
-ds  = Dataset("20170603_d-OGS--CARB-MedBFM3-MED-b20221101_re-sv05.00.nc")
+ds  = Dataset("data/20250101_m-OGS--NUTR-MedBFM4-MED-b20250211_an-sv09.00.nc")
+dp  = Dataset("data/20250101_m-OGS--PFTC-MedBFM4-MED-b20250211_an-sv09.00.nc")
+dd  = Dataset("data/20170603_d-OGS--CARB-MedBFM3-MED-b20221101_re-sv05.00.nc")
 λ   = ds["longitude"][:]
 φ   = ds["latitude"][:]
 z   = reverse(ds["depth"][:])
 
-ph_data  = reverse(ds["ph"][:, :, :],  dims=3)
-alk_data = reverse(ds["talk"][:, :, :], dims=3)
+nutrients_data = reverse(ds["no3"][:, :, :],  dims=3)
+phyto_data = reverse(dp["phyc"][:, :, :],  dims=3)
+zoo_data = reverse(dp["zooc"][:, :, :],  dims=3)
+detritus_data = reverse(dd["detritus"][:, :, :],  dims=3)
+#ph_data  = reverse(ds["ph"][:, :, :],  dims=3)
+#alk_data = reverse(ds["talk"][:, :, :], dims=3)
 
+# creating a grid for interpolation
 Nλ = length(λ)
 Nφ = length(φ)
 Nz = length(z)
@@ -166,28 +186,60 @@ bcg_grid = LatitudeLongitudeGrid(size = (Nλ, Nφ, Nz),
                                  longitude = (λᴮ₁, λᴮ₂),
                                  z = z_faces)
 
-ph  = CenterField(bcg_grid)
-alk = CenterField(bcg_grid)
+# creating bgc fields
 
-ph_data[ismissing.(ph_data)]   .= NaN
-alk_data[ismissing.(alk_data)] .= NaN
+Ni = CenterField(bcg_grid)
+Pi = CenterField(bcg_grid)
+Zi = CenterField(bcg_grid)
+Di = CenterField(bcg_grid)
+#ph  = CenterField(bcg_grid)
+#alk = CenterField(bcg_grid)
 
-ph_data  = ph_data .|> Float64
-alk_data = alk_data .|> Float64
+# masking fields
+nutrients_data[ismissing.(phyto_data)]   .= NaN
+phyto_data[ismissing.(phyto_data)]   .= NaN
+zoo_data[ismissing.(phyto_data)]   .= NaN
+detritus_data[ismissing.(phyto_data)]   .= NaN
+#ph_data[ismissing.(ph_data)]   .= NaN
+#alk_data[ismissing.(alk_data)] .= NaN
 
-set!(ph,  ph_data)
-set!(alk, alk_data)
+nutrients_data = nutrients_data .|> Float64
+phyto_data  = phyto_data .|> Float64
+zoo_data = zoo_data .|> Float64
+detritus_data  = detritus_data .|> Float64
+#ph_data  = ph_data .|> Float64
+#alk_data = alk_data .|> Float64
+
+set!(Ni, nutrients_data)
+set!(Pi,  phyto_data)
+set!(Zi, zoo_data)
+set!(Di,  detritus_data)
+#set!(ph,  ph_data)
+#set!(alk, alk_data)
 
 mask = CenterField(bcg_grid, Bool)
-mask .= isnan.(interior(ph))
+mask .= isnan.(interior(Ni))
+mask .= isnan.(interior(Pi))
+mask .= isnan.(interior(Zi))
+mask .= isnan.(interior(Di))
+#mask .= isnan.(interior(ph))
 
-ClimaOcean.DataWrangling.inpaint_mask!(ph,  mask; inpainting=10)
-ClimaOcean.DataWrangling.inpaint_mask!(alk, mask; inpainting=10)
+# we need to inpaint the fields to avoid problems at the boundaries
+ClimaOcean.DataWrangling.inpaint_mask!(Ni,  mask; inpainting=10)
+ClimaOcean.DataWrangling.inpaint_mask!(Pi, mask; inpainting=10)
+ClimaOcean.DataWrangling.inpaint_mask!(Zi,  mask; inpainting=10)
+ClimaOcean.DataWrangling.inpaint_mask!(Di, mask; inpainting=10)
+#ClimaOcean.DataWrangling.inpaint_mask!(ph,  mask; inpainting=10)
+#ClimaOcean.DataWrangling.inpaint_mask!(alk, mask; inpainting=10)
 
 using Oceananigans.Fields: interpolate!
-
-interpolate!(ocean.model.tracers.ph,  ph)
-interpolate!(ocean.model.tracers.alk, alk)
+# now we can interpolate
+interpolate!(ocean.model.tracers.N,  Ni)
+interpolate!(ocean.model.tracers.P, Pi)
+interpolate!(ocean.model.tracers.Z,  Zi)
+interpolate!(ocean.model.tracers.D, Di)
+#interpolate!(ocean.model.tracers.ph,  ph)
+#interpolate!(ocean.model.tracers.alk, alk)
 
 # Try to infer the data grid from the nc file
 
@@ -199,7 +251,8 @@ interpolate!(ocean.model.tracers.alk, alk)
 # field, so we initialize temperature T and salinity S from ECCO.
 
 set!(ocean.model, T=Metadata(:temperature; dates=dates[1], dataset=ECCO4Monthly()), 
-                  S=Metadata(:salinity;    dates=dates[1], dataset=ECCO4Monthly()))
+                  S=Metadata(:salinity;    dates=dates[1], dataset=ECCO4Monthly()).
+                  NO₃ = Ni, P = Pi, Z = Zi, DOM = Di)
 
 ## Adding an atmospheric forcing
 
