@@ -109,25 +109,27 @@ FS = ECCORestoring(:salinity, arch;    dates, mask=gibraltar_mask, rate=1/10days
 
 momentum_advection = WENOVectorInvariant()
 tracer_advection = WENO(order=7)
-closure = CalibratedRiBasedVerticalDiffusivity()
+closure = nothing
 timestepper = :SplitRungeKutta3
 
-struct DattiloBiogeochemistry{P1, P2, P3}
+using Oceananigans.Biogeochemistry: AbstractBiogeochemistry
+
+struct DtlBiogeochemistry{P1, P2, P3} <: AbstractBiogeochemistry
     par1 :: P1
     par2 :: P2
     par3 :: P3
 end
 
-import Oceananigans.Biogeochemistry: required_biogeomichal_tracers
+import Oceananigans.Biogeochemistry: required_biogeochemical_tracers
 
-required_biogeomichal_tracers(::DattiloBiogeochemistry) = (:ph, :alk)
+required_biogeochemical_tracers(::DtlBiogeochemistry) = (:ph, :alk)
 
 ocean = ocean_simulation(grid; 
                          timestepper, 
                          momentum_advection, 
                          tracer_advection, 
                          closure, 
-                         biogeochemistry = DattiloBiogeochemistry(1, 2, 3),
+                         biogeochemistry = DtlBiogeochemistry(1, 2, 3),
                          forcing=(T=FT, S=FS))
 
 ####
@@ -136,38 +138,53 @@ ocean = ocean_simulation(grid;
 
 # load the dataset
 ds  = Dataset("20170603_d-OGS--CARB-MedBFM3-MED-b20221101_re-sv05.00.nc")
-λ   = ds["lon"][:]
-φ   = ds["lat"][:]
+λ   = ds["longitude"][:]
+φ   = ds["latitude"][:]
 z   = reverse(ds["depth"][:])
+
 ph_data  = reverse(ds["ph"][:, :, :],  dims=3)
-alk_data = reverse(ds["alk"][:, :, :], dims=3)
+alk_data = reverse(ds["talk"][:, :, :], dims=3)
 
 Nλ = length(λ)
 Nφ = length(φ)
 Nz = length(z)
+
+z_faces   = zeros(Nz+1)
+for k in Nz:-1:1
+    z_faces[k] = z_faces[k+1] - (z[k] + z_faces[k+1]) * 2
+end
+
 
 λᴮ₁ = λ[1]  - (λ[2]  - λ[1]   ) / 2
 λᴮ₂ = λ[Nλ] + (λ[Nλ] - λ[Nλ-1]) / 2
 
 φᴮ₁ = φ[1]  - (φ[2]  - φ[1]   ) / 2
 φᴮ₂ = φ[Nφ] + (φ[Nφ] - φ[Nφ-1]) / 2
-z   = - z
 
 bcg_grid = LatitudeLongitudeGrid(size = (Nλ, Nφ, Nz),
                                  latitude  = (φᴮ₁, φᴮ₂),
                                  longitude = (λᴮ₁, λᴮ₂),
-                                 z = z)
+                                 z = z_faces)
 
 ph  = CenterField(bcg_grid)
 alk = CenterField(bcg_grid)
 
+ph_data[ismissing.(ph_data)]   .= NaN
+alk_data[ismissing.(alk_data)] .= NaN
+
+ph_data  = ph_data .|> Float64
+alk_data = alk_data .|> Float64
+
 set!(ph,  ph_data)
 set!(alk, alk_data)
 
-mask = interior(ph) .> 1e10
+mask = CenterField(bcg_grid, Bool)
+mask .= isnan.(interior(ph))
 
-ClimaOcean.DataWrangling.inpaint_mask!(ph,  mask)
-ClimaOcean.DataWrangling.inpaint_mask!(alk, mask)
+ClimaOcean.DataWrangling.inpaint_mask!(ph,  mask; inpainting=10)
+ClimaOcean.DataWrangling.inpaint_mask!(alk, mask; inpainting=10)
+
+using Oceananigans.Fields: interpolate!
 
 interpolate!(ocean.model.tracers.ph,  ph)
 interpolate!(ocean.model.tracers.alk, alk)
