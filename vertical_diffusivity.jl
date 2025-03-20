@@ -1,6 +1,6 @@
 using Oceananigans
 using Oceananigans.Architectures: architecture
-using Oceananigans.BuoyancyModels: ∂z_b
+using Oceananigans.BuoyancyFormulations: ∂z_b
 using Oceananigans.Operators
 using Oceananigans.BoundaryConditions
 using Oceananigans.Grids: inactive_node
@@ -27,7 +27,7 @@ import Oceananigans.TurbulenceClosures:
 using Oceananigans.Utils: launch!
 using Oceananigans.Coriolis: fᶠᶠᵃ
 using Oceananigans.Operators
-using Oceananigans.BuoyancyModels: ∂x_b, ∂y_b, ∂z_b 
+using Oceananigans.BuoyancyFormulations: ∂x_b, ∂y_b, ∂z_b 
 
 using Oceananigans.TurbulenceClosures
 using Oceananigans.TurbulenceClosures: HorizontalFormulation, VerticalFormulation
