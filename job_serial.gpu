@@ -1,0 +1,23 @@
+#!/bin/bash
+
+#SBATCH --time=24:00:00
+
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --gpus-per-node=1
+
+#SBATCH --mem=0
+#SBATCH --partition=boost_usr_prod
+#SBATCH --err=gloerr_serial.err
+#SBATCH --out=gloout_serial.out
+
+#SBATCH --account=OGS23_PRACE_IT_0
+
+export CUDA_VERSION=12.1
+
+module load profile/meteo
+module load cuda/$CUDA_VERSION 
+module load openmpi
+## source /leonardo/home/userexternal/mreale01/.bash_profile
+## TODO: remove -O0 for production runs
+julia --project --check-bounds=no -O0 --color=yes mediterranean_simulation.jl 
