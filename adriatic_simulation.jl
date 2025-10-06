@@ -17,7 +17,7 @@
 
 # NOT WORKING ON XQUARTZ using GLMakie
 using Pkg
-using CairoMakie
+using GLMakie
 using Oceananigans
 using Oceananigans.Grids
 using Oceananigans: architecture
@@ -38,38 +38,37 @@ include("vertical_diffusivity.jl")
 # This section demonstrates the use of the LatitudeLongitudeGrid function to create a grid that matches the
 # Mediterranean's geographical and bathymetric features.
 
-arch = GPU()
+arch = CPU()
 
-# TODO: check domain bounds in latitude-longitude
-const λ₁, λ₂  = (-8.6, 42) # domain in longitude
-const φ₁, φ₂  = (  30, 48) # domain in latitude
+ds = Dataset("data/mesh_mask2D_NA.nc")
+xc = ds["XC"][:]
+yc = ds["YC"][:]
 
-Nx = 30 * ceil(Int, λ₂ - λ₁) # 1/50th of a degree resolution
-Ny = 30 * ceil(Int, φ₂ - φ₁) # 1/50th of a degree resolution
-Nz = 140 # 140 vertical levels
+x_faces = [xc..., xc[end] + (xc[end] - xc[end-1])]
+y_faces = [yc..., yc[end] + (yc[end] - yc[end-1])]
 
-# Probably you want to change `r_faces` to get the resolution you want 
-# at surface vs depth. This is an Array of size `Nz+1` that defines the 
-# position of the initial position of z-interfaces (when `η = 0`)
+z_faces = [-228.9898, -217.6341, -206.7042, -196.1894, -186.0793, -176.3635, 
+    -167.032, -158.075, -149.4827, -141.2458, -133.3548, -125.8009, -118.575, 
+    -111.6685, -105.0728, -98.77982, -92.78125, -87.06921, -81.63593, 
+    -76.47385, -71.57558, -66.93387, -62.54169, -58.39215, -54.47855, 
+    -50.79433, -47.33311, -44.08865, -41.05489, -38.2259, -35.59592, 
+    -33.15932, -30.91062, -28.8445, -26.95574, -25.2393, -23.69024, 
+    -22.30376, -21.0752, -20, -19, -18, -17, -16, -15, -14, -13, -12, -11, 
+    -10, -9, -8, -7, -6, -5, -4, -3, -2, -1, 0]
 
-# TODO: use the MITgcm z-coordinates 
-# Uncomment below when we find out the vertical coordinates 
-# ds = Dataset("data/zc_copernicus.nc")
-# r_centers = reverse(ds["depth"][:])
-# r_faces   = zeros(Nz+1)
-# for k in Nz:-1:1
-#   r_faces[k] = r_faces[k+1] - (r_centers[k] + r_faces[k+1]) * 2
-# end
+Nz = length(z_faces) - 1 # 140 vertical levels
+Nx = length(x_faces) - 1
+Ny = length(y_faces) - 1
 
-z_faces = MutableVerticalDiscretization(r_faces)
+z_faces = MutableVerticalDiscretization(z_faces)
 
 # To run on Distributed architectures (for example 4 ranks in x and 4 in y):
 # arch = Distributed(arch, partition = Partition(x = 4, y = 4))
 
 grid = LatitudeLongitudeGrid(arch;
                              size = (Nx, Ny, Nz),
-                             latitude  = (φ₁, φ₂),
-                             longitude = (λ₁, λ₂),
+                             latitude  = y_faces,
+                             longitude = x_faces,
                              z = z_faces,
                              halo = (7, 7, 7))
 
@@ -80,9 +79,7 @@ grid = LatitudeLongitudeGrid(arch;
 # are adjusted to refine the bathymetry representation.
 
 # TODO: load the bathymetry from file 
-# using NCDatasets
-# ds = Dataset("path/to/bathymetry.nc")
-# bottom_height = ds["name_of_bathymetry_variable"][:, :] # Adjust indexing as needed
+bottom_height = - ds["Depth"][:, :] 
 
 grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_map=true)
 
@@ -95,14 +92,18 @@ v_meta = Metadata(:v_velocity;  start_date)
 T_meta = Metadata(:temperature; start_date)
 S_meta = Metadata(:salinity;    start_date)
 
-u_bcs = FieldTimeSeries(u_meta, grid; time_indices_in_memory=10)
-v_bcs = FieldTimeSeries(v_meta, grid; time_indices_in_memory=10)
-T_bcs = FieldTimeSeries(T_meta, grid; time_indices_in_memory=10)
-S_bcs = FieldTimeSeries(S_meta, grid; time_indices_in_memory=10)
+u_out = FieldTimeSeries(u_meta, grid; time_indices_in_memory=10)
+v_out = FieldTimeSeries(v_meta, grid; time_indices_in_memory=10)
+T_out = FieldTimeSeries(T_meta, grid; time_indices_in_memory=10)
+S_out = FieldTimeSeries(S_meta, grid; time_indices_in_memory=10)
 
 # Set the boundary conditions
 # TODO: Set up the correct boundary conditions
-
+# Remember, we _need_ FluxBoundaryConditions at the `top` and drag BC at the `bottom`
+# u_bcs = .... (open bc with u_out as external data)
+# v_bcs = .... (open bc with v_out as external data)
+# T_bcs = .... (restoring bc with T_out as external data)
+# S_bcs = .... (restoring bc with S_out as external data)
 
 # Constructing the Simulation
 #
@@ -118,12 +119,11 @@ tracer_advection   = WENO(order=7)
 
 ocean = ocean_simulation(grid; 
                          momentum_advection, 
-                         tracer_advection, 
+                         tracer_advection)
                          # TODO: Uncomment below...
                          # timestepper,
                          # free_surface,
-                         # boundary_conditions=(u=u_bcs, v=v_bcs, T=T_bcs, S=S_bcs),
-                         timestepper)
+                         # boundary_conditions=(u=u_bcs, v=v_bcs, T=T_bcs, S=S_bcs))
 
 # Initializing the model
 #
@@ -146,7 +146,7 @@ atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(100), in
 radiation = Radiation()
 
 # The coupled model! (we have no sea-ice so we do not add it)
-coupled_model = OceanSeaIceModel(ocean; atmosphere, radiation)
+coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation)
 
 # The coupled simulation:
 Δt = 10
