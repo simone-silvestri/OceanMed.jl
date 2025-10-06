@@ -17,7 +17,7 @@
 
 # NOT WORKING ON XQUARTZ using GLMakie
 using Pkg
-using GLMakie
+using CairoMakie
 using Oceananigans
 using Oceananigans.Grids
 using Oceananigans: architecture
@@ -28,7 +28,7 @@ using PythonCall
 using NCDatasets
 using Dates
 
-include("vertical_diffusivity.jl")
+# include("vertical_diffusivity.jl")
 
 # ## Grid Configuration for the Mediterranean Sea
 #
@@ -72,28 +72,40 @@ grid = LatitudeLongitudeGrid(arch;
                              z = z_faces,
                              halo = (7, 7, 7))
 
-# ### Bathymetry Interpolation
-#
-# The script interpolates bathymetric data onto the grid, ensuring that the model accurately represents 
-# the sea floor's topography. Parameters such as `minimum_depth` and `interpolation_passes`
-# are adjusted to refine the bathymetry representation.
+# ### Load and set the Bathymetry 
 
-# TODO: load the bathymetry from file 
 bottom_height = - ds["Depth"][:, :] 
-
 grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_map=true)
 
 # Load the forcing data
 start_date = Date(2017, 1, 1)
 
-dataset = GLORYSDaily()
-u_meta = Metadata(:u_velocity;  start_date)
-v_meta = Metadata(:v_velocity;  start_date)
-T_meta = Metadata(:temperature; start_date)
-S_meta = Metadata(:salinity;    start_date)
+bbox = ClimaOcean.DataWrangling.BoundingBox(
+            longitude = (x_faces[1]-2, x_faces[end]+2), 
+            latitude  = (y_faces[1]-2, y_faces[end]+2))
 
+dir = "./data"
+
+dataset = GLORYSDaily()
+u_meta = Metadata(:u_velocity;  dataset, dir, bounding_box=bbox, start_date)
+v_meta = Metadata(:v_velocity;  dataset, dir, bounding_box=bbox, start_date)
+T_meta = Metadata(:temperature; dataset, dir, bounding_box=bbox, start_date)
+S_meta = Metadata(:salinity;    dataset, dir, bounding_box=bbox, start_date)
+
+ClimaOcean.DataWrangling.download_dataset(u_meta)
+ClimaOcean.DataWrangling.download_dataset(v_meta)
+ClimaOcean.DataWrangling.download_dataset(T_meta)
+ClimaOcean.DataWrangling.download_dataset(S_meta)
+
+#####
+##### Part we need to work on:
+#####
+
+# Maybe we need to restore to this?
 u_out = FieldTimeSeries(u_meta, grid; time_indices_in_memory=10)
 v_out = FieldTimeSeries(v_meta, grid; time_indices_in_memory=10)
+
+# For sure we need to restore to these!
 T_out = FieldTimeSeries(T_meta, grid; time_indices_in_memory=10)
 S_out = FieldTimeSeries(S_meta, grid; time_indices_in_memory=10)
 
@@ -102,8 +114,14 @@ S_out = FieldTimeSeries(S_meta, grid; time_indices_in_memory=10)
 # Remember, we _need_ FluxBoundaryConditions at the `top` and drag BC at the `bottom`
 # u_bcs = .... (open bc with u_out as external data)
 # v_bcs = .... (open bc with v_out as external data)
+#
+# Note, most likely you will need to set up a sponge layer
 # T_bcs = .... (restoring bc with T_out as external data)
 # S_bcs = .... (restoring bc with S_out as external data)
+
+#####
+##### After this, everything should work out of the box
+#####
 
 # Constructing the Simulation
 #
@@ -114,7 +132,7 @@ momentum_advection = WENOVectorInvariant()
 tracer_advection   = WENO(order=7)
 
 # Choose the correct TS that works with the bcs
-# timestepper = :SplitRungeKutta3
+# timestepper = :QuasiAdamsBashforth2
 # free_surface = Choose the correct free_surface that works with the bcs
 
 ocean = ocean_simulation(grid; 
