@@ -92,10 +92,16 @@ v_meta = Metadata(:v_velocity;  dataset, dir, bounding_box=bbox, start_date)
 T_meta = Metadata(:temperature; dataset, dir, bounding_box=bbox, start_date)
 S_meta = Metadata(:salinity;    dataset, dir, bounding_box=bbox, start_date)
 
-ClimaOcean.DataWrangling.download_dataset(u_meta)
-ClimaOcean.DataWrangling.download_dataset(v_meta)
-ClimaOcean.DataWrangling.download_dataset(T_meta)
-ClimaOcean.DataWrangling.download_dataset(S_meta)
+# 
+path = ClimaOcean.DataWrangling.metadata_path(u_meta[1])
+if !isfile(path)
+    throw(error("Data needs to be downloaded on the login node! run the `download_glorys_data.jl` file."))
+end
+
+# ClimaOcean.DataWrangling.download_dataset(u_meta)
+# ClimaOcean.DataWrangling.download_dataset(v_meta)
+# ClimaOcean.DataWrangling.download_dataset(T_meta)
+# ClimaOcean.DataWrangling.download_dataset(S_meta)
 
 #####
 ##### Part we need to work on:
