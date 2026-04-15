@@ -1,27 +1,17 @@
-# # Mediterranean simulation with restoring to ECCO
+# # Adriatic simulation with GLORYS boundary conditions
 #
-# This example is a comprehensive example of setting up and running a high-resolution ocean
-# simulation for the Mediterranean Sea using the Oceananigans and ClimaOcean packages, with
-# a focus on restoring temperature and salinity fields from the ECCO (Estimating the Circulation
-# and Climate of the Ocean) dataset. 
-#
-# The example is divided into several sections, each handling a specific part of the simulation
-# setup and execution process.
+# This example sets up and runs an ocean simulation for the Adriatic Sea
+# using Oceananigans and NumericalEarth, with boundary data from GLORYS.
 
 # ## Initial Setup with Package Imports
-#
-# We begin by importing necessary Julia packages for visualization (CairoMakie), ocean modeling
-# (Oceananigans, ClimaOcean), and handling of dates and times (CFTime, Dates). 
-# These packages provide the foundational tools for creating the simulation environment, 
-# including grid setup, physical processes modeling, and data visualization.
 
-# NOT WORKING ON XQUARTZ using GLMakie
 using Pkg
 using CairoMakie
 using Oceananigans
 using Oceananigans.Grids
 using Oceananigans: architecture
-using ClimaOcean
+using NumericalEarth
+using NumericalEarth.DataWrangling: BoundingBox, download_dataset, metadata_path
 using Oceananigans.Units
 using Printf
 using PythonCall
@@ -30,13 +20,7 @@ using Dates
 
 # include("vertical_diffusivity.jl")
 
-# ## Grid Configuration for the Mediterranean Sea
-#
-# The script defines a high-resolution grid to represent the Mediterranean Sea, specifying the domain in terms of longitude (λ₁, λ₂), 
-# latitude (φ₁, φ₂), and a stretched vertical grid to capture the depth variation (`z_faces`). 
-# The grid resolution is set to approximately 1/15th of a degree, which translates to a spatial resolution of about 7 km. 
-# This section demonstrates the use of the LatitudeLongitudeGrid function to create a grid that matches the
-# Mediterranean's geographical and bathymetric features.
+# ## Grid Configuration
 
 arch = CPU()
 
@@ -47,13 +31,13 @@ yc = ds["YC"][:]
 x_faces = [xc..., xc[end] + (xc[end] - xc[end-1])]
 y_faces = [yc..., yc[end] + (yc[end] - yc[end-1])]
 
-z_faces = [-228.9898, -217.6341, -206.7042, -196.1894, -186.0793, -176.3635, 
-    -167.032, -158.075, -149.4827, -141.2458, -133.3548, -125.8009, -118.575, 
-    -111.6685, -105.0728, -98.77982, -92.78125, -87.06921, -81.63593, 
-    -76.47385, -71.57558, -66.93387, -62.54169, -58.39215, -54.47855, 
-    -50.79433, -47.33311, -44.08865, -41.05489, -38.2259, -35.59592, 
-    -33.15932, -30.91062, -28.8445, -26.95574, -25.2393, -23.69024, 
-    -22.30376, -21.0752, -20, -19, -18, -17, -16, -15, -14, -13, -12, -11, 
+z_faces = [-228.9898, -217.6341, -206.7042, -196.1894, -186.0793, -176.3635,
+    -167.032, -158.075, -149.4827, -141.2458, -133.3548, -125.8009, -118.575,
+    -111.6685, -105.0728, -98.77982, -92.78125, -87.06921, -81.63593,
+    -76.47385, -71.57558, -66.93387, -62.54169, -58.39215, -54.47855,
+    -50.79433, -47.33311, -44.08865, -41.05489, -38.2259, -35.59592,
+    -33.15932, -30.91062, -28.8445, -26.95574, -25.2393, -23.69024,
+    -22.30376, -21.0752, -20, -19, -18, -17, -16, -15, -14, -13, -12, -11,
     -10, -9, -8, -7, -6, -5, -4, -3, -2, -1, 0]
 
 Nz = length(z_faces) - 1 # 140 vertical levels
@@ -62,9 +46,6 @@ Ny = length(y_faces) - 1
 
 z_faces = MutableVerticalDiscretization(z_faces)
 
-# To run on Distributed architectures (for example 4 ranks in x and 4 in y):
-# arch = Distributed(arch, partition = Partition(x = 4, y = 4))
-
 grid = LatitudeLongitudeGrid(arch;
                              size = (Nx, Ny, Nz),
                              latitude  = y_faces,
@@ -72,16 +53,16 @@ grid = LatitudeLongitudeGrid(arch;
                              z = z_faces,
                              halo = (7, 7, 7))
 
-# ### Load and set the Bathymetry 
+# ### Load and set the Bathymetry
 
-bottom_height = - ds["Depth"][:, :] 
+bottom_height = - ds["Depth"][:, :]
 grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_map=true)
 
 # Load the forcing data
 start_date = Date(2017, 1, 1)
 
-bbox = ClimaOcean.DataWrangling.BoundingBox(
-            longitude = (x_faces[1]-2, x_faces[end]+2), 
+bbox = BoundingBox(
+            longitude = (x_faces[1]-2, x_faces[end]+2),
             latitude  = (y_faces[1]-2, y_faces[end]+2))
 
 dir = "./data"
@@ -92,16 +73,16 @@ v_meta = Metadata(:v_velocity;  dataset, dir, bounding_box=bbox, start_date)
 T_meta = Metadata(:temperature; dataset, dir, bounding_box=bbox, start_date)
 S_meta = Metadata(:salinity;    dataset, dir, bounding_box=bbox, start_date)
 
-# 
-path = ClimaOcean.DataWrangling.metadata_path(u_meta[1])
+#
+path = metadata_path(u_meta[1])
 if !isfile(path)
     throw(error("Data needs to be downloaded on the login node! run the `download_glorys_data.jl` file."))
 end
 
-# ClimaOcean.DataWrangling.download_dataset(u_meta)
-# ClimaOcean.DataWrangling.download_dataset(v_meta)
-# ClimaOcean.DataWrangling.download_dataset(T_meta)
-# ClimaOcean.DataWrangling.download_dataset(S_meta)
+# download_dataset(u_meta)
+# download_dataset(v_meta)
+# download_dataset(T_meta)
+# download_dataset(S_meta)
 
 #####
 ##### Part we need to work on:
@@ -132,7 +113,7 @@ S_out = FieldTimeSeries(S_meta, grid; time_indices_in_memory=10)
 # Constructing the Simulation
 #
 # We construct an ocean simulation that evolves two tracers, temperature (:T), salinity (:S)
-# and we pass the previously defined forcing that nudge these tracers 
+# and we pass the previously defined forcing that nudge these tracers
 
 momentum_advection = WENOVectorInvariant()
 tracer_advection   = WENO(order=7)
@@ -141,8 +122,8 @@ tracer_advection   = WENO(order=7)
 # timestepper = :QuasiAdamsBashforth2
 # free_surface = Choose the correct free_surface that works with the bcs
 
-ocean = ocean_simulation(grid; 
-                         momentum_advection, 
+ocean = ocean_simulation(grid;
+                         momentum_advection,
                          tracer_advection)
                          # TODO: Uncomment below...
                          # timestepper,
@@ -150,23 +131,14 @@ ocean = ocean_simulation(grid;
                          # boundary_conditions=(u=u_bcs, v=v_bcs, T=T_bcs, S=S_bcs))
 
 # Initializing the model
-#
-# The model can be initialized with custom values or with ecco fields.
-# In this case, our ECCO dataset has access to a temperature and a salinity
-# field, so we initialize temperature T and salinity S from ECCO.
 
-set!(ocean.model, T=Metadatum(:temperature; date=start_date, dataset), 
+set!(ocean.model, T=Metadatum(:temperature; date=start_date, dataset),
                   S=Metadatum(:salinity;    date=start_date, dataset))
 
 ## Adding an atmospheric forcing
 
-# we use JRA55-do dataset to force the model with surface heat fluxes and wind stress
-# Only 100 time instances of the JRA55 datasets are loaded in memory at each time
-# these are updated as the model progresses
 atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(100), include_rivers_and_icebergs=true, dir="./data")
 
-# This uses a quite simple ocean albedo model (latitude dependent) and 
-# an ocean emissivity of 0.97. It is all customizable
 radiation = Radiation()
 
 # The coupled model! (we have no sea-ice so we do not add it)
@@ -177,7 +149,7 @@ coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation)
 stop_time = 5days
 simulation = Simulation(coupled_model; Δt, stop_time)
 
-function progress(sim) 
+function progress(sim)
     u, v, w = sim.model.ocean.model.velocities
     T, S = sim.model.ocean.model.tracers
 
@@ -198,7 +170,7 @@ simulation.output_writers[:surface_fields] = JLD2Writer(ocean.model, merge(ocean
                                                        overwrite_existing = true,
                                                        filename = "med_surface_fields.jld2")
 
-ocean.output_writers[:checkpointer] = Checkpointer(ocean.model, 
+ocean.output_writers[:checkpointer] = Checkpointer(ocean.model,
 						   schedule = IterationInterval(86400),
 						   overwrite_existing = true,
 						   prefix = "mediterranean")
@@ -212,12 +184,6 @@ simulation.stop_time = 365days
 run!(simulation)
 
 # Record a video
-#
-# Let's read the data and record a video of the Mediterranean Sea's surface
-# (1) Zonal velocity (u)
-# (2) Meridional velocity (v)
-# (3) Temperature (T)
-# (4) Salinity (S)
 
 u_series = FieldTimeSeries("med_surface_fields.jld2", "u"; backend=OnDisk())
 v_series = FieldTimeSeries("med_surface_fields.jld2", "v"; backend=OnDisk())
@@ -242,6 +208,6 @@ heatmap!(ax, S)
 
 CairoMakie.record(fig, "mediterranean_video.mp4", 1:length(u_series.times); framerate = 5) do i
     @info "recording iteration $i"
-    iter[] = i    
+    iter[] = i
 end
 # ![](mediterranean_video.mp4)

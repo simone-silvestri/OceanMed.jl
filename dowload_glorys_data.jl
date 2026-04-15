@@ -1,5 +1,7 @@
-using ClimaOcean
+using NumericalEarth
+using NumericalEarth.DataWrangling: BoundingBox, download_dataset
 using Oceananigans
+using NCDatasets
 
 ds = Dataset("data/mesh_mask2D_NA.nc")
 xc = ds["XC"][:]
@@ -11,17 +13,8 @@ y_faces = [yc..., yc[end] + (yc[end] - yc[end-1])]
 # Load the forcing data
 start_date = Date(2017, 1, 1)
 
-bbox = ClimaOcean.DataWrangling.BoundingBox(
-            longitude = (x_faces[1]-2, x_faces[end]+2), 
-            latitude  = (y_faces[1]-2, y_faces[end]+2))
-
-dir = "./data"
-
-# Load the forcing data
-start_date = Date(2017, 1, 1)
-
-bbox = ClimaOcean.DataWrangling.BoundingBox(
-            longitude = (x_faces[1]-2, x_faces[end]+2), 
+bbox = BoundingBox(
+            longitude = (x_faces[1]-2, x_faces[end]+2),
             latitude  = (y_faces[1]-2, y_faces[end]+2))
 
 dir = "./data"
@@ -33,7 +26,7 @@ T_meta = Metadata(:temperature; dataset, dir, bounding_box=bbox, start_date)
 S_meta = Metadata(:salinity;    dataset, dir, bounding_box=bbox, start_date)
 
 # Actually download the data, it will appear in the "./data" folder
-ClimaOcean.DataWrangling.download_dataset(u_meta)
-ClimaOcean.DataWrangling.download_dataset(v_meta)
-ClimaOcean.DataWrangling.download_dataset(T_meta)
-ClimaOcean.DataWrangling.download_dataset(S_meta)
+download_dataset(u_meta)
+download_dataset(v_meta)
+download_dataset(T_meta)
+download_dataset(S_meta)

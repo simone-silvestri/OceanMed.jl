@@ -1,5 +1,5 @@
-using ClimaOcean
-using ClimaOcean.ECCO
+using NumericalEarth
+using NumericalEarth.DataWrangling: download_dataset
 using Dates
 
 dataset = ECCO4Monthly()
