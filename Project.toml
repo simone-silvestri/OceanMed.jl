@@ -1,3 +1,8 @@
+name = "OceanMed"
+uuid = "8d305b2f-6bfe-46f8-b73c-269c7878f0a3"
+authors = ["Simone Silvestri"]
+version = "0.1.0"
+
 [deps]
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
 CFTime = "179af706-886a-5703-950a-314cd64e0468"
@@ -6,13 +11,24 @@ CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
 NumericalEarth = "904d977b-046a-4731-8b86-9235c0d1ef02"
 CopernicusMarine = "cd43e856-93a3-40c8-bc9e-6146cdce14fa"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+Downloads = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195"
 MPIPreferences = "3da0fdf6-3ccc-4f1b-acd9-58baa6c99267"
+NCDatasets = "85f8d34a-cbdd-5861-8df4-14fed0d494ab"
 NetCDF_jll = "7243133f-43d8-5620-bbf4-c2c921802cf3"
 Oceananigans = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
 Preferences = "21216c6a-2e73-6563-6e65-726566657250"
 StyledStrings = "f489334b-da3d-4c2e-b8f0-e476e12c162b"
+
+[compat]
+CUDA = "6"
+CairoMakie = "0.15"
+CopernicusMarine = "0.1"
+NCDatasets = "0.14"
+NumericalEarth = "0.5.6"
+Oceananigans = "0.110"
+julia = "1.10"
 
 [extras]
 CUDA_Runtime_jll = "76a88914-d11a-5bdc-97e0-2f5a05c973a2"

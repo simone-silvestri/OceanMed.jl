@@ -1,66 +1,43 @@
 # # Mediterranean simulation with open boundary conditions at Gibraltar
 #
-# This example sets up and runs a high-resolution ocean simulation for the Mediterranean Sea
-# using the Oceananigans and NumericalEarth packages, with open boundary conditions (OBCs) at
-# the Strait of Gibraltar using GLORYS reanalysis data.
+# This example sets up and runs a high-resolution ocean simulation for the Mediterranean Sea using
+# Oceananigans and NumericalEarth. It uses the high-resolution Copernicus Mediterranean bathymetry
+# ([`MEDSEABathymetry`](@ref)) and open boundary conditions (OBCs) at the Strait of Gibraltar fed by
+# GLORYS reanalysis data. The reusable building blocks live in the `OceanMed` module.
 
-# ## Initial Setup with Package Imports
+# ## Initial setup with package imports
 
-using Pkg
-using CairoMakie
+using OceanMed
+using OceanMed: MEDSEABathymetry, copernicus_z_faces,
+                gibraltar_sponge_forcings, gibraltar_boundary_conditions
+
 using Oceananigans
-using Oceananigans.Grids
-using Oceananigans: architecture
-using Oceananigans.BoundaryConditions: RadiationBoundaryCondition
-using NumericalEarth
-using NumericalEarth.DataWrangling: BoundingBox, download_dataset
-using NumericalEarth.Oceans: u_quadratic_bottom_drag, v_quadratic_bottom_drag,
-                             u_immersed_bottom_drag, v_immersed_bottom_drag
 using Oceananigans.Units
-using Oceananigans.Grids: xnode
+using NumericalEarth
+using NumericalEarth.DataWrangling: BoundingBox
+
+using CairoMakie
 using Printf
-using NCDatasets
 using Dates
 
-include("vertical_diffusivity.jl")
-
-# ## Grid Configuration for the Mediterranean Sea
+# ## Grid configuration for the Mediterranean Sea
 #
-# The script defines a high-resolution grid to represent the Mediterranean Sea, specifying the domain in terms of longitude (λ₁, λ₂),
-# latitude (φ₁, φ₂), and a stretched vertical grid to capture the depth variation (`z_faces`).
-# The grid resolution is set to approximately 1/30th of a degree.
-# This section demonstrates the use of the LatitudeLongitudeGrid function to create a grid that matches the
-# Mediterranean's geographical and bathymetric features.
+# The grid spans the Mediterranean in longitude (λ₁, λ₂) and latitude (φ₁, φ₂) at roughly 1/30ᵗʰ of a
+# degree, with a stretched vertical grid reconstructed from the Copernicus levels (280 layers).
 
 arch = GPU()
 
-const λ₁, λ₂  = (-8.6, 42) # domain in longitude
-const φ₁, φ₂  = (  30, 48) # domain in latitude
+const λ₁, λ₂ = (-8.6, 36.5) # domain in longitude
+const φ₁, φ₂ = (  30, 48)   # domain in latitude
 
-Nx = 30 * ceil(Int, λ₂ - λ₁) # ~1/30th of a degree resolution
-Ny = 30 * ceil(Int, φ₂ - φ₁) # ~1/30th of a degree resolution
-# Build z-faces by first reconstructing the 141 Copernicus faces from
-# the 140 depth centers, then splitting each layer in half → 280 levels.
-ds = Dataset("data/zc_copernicus.nc")
-r_centers = reverse(ds["depth"][:])
-Nz_copernicus = length(r_centers)
-coarse_faces = zeros(Nz_copernicus + 1)
-for k in Nz_copernicus:-1:1
-    coarse_faces[k] = coarse_faces[k+1] - (r_centers[k] + coarse_faces[k+1]) * 2
-end
+Nx = 500 * ceil(Int, λ₂ - λ₁) # ~1/30ᵗʰ of a degree resolution
+Ny = 500 * ceil(Int, φ₂ - φ₁) # ~1/30ᵗʰ of a degree resolution
 
-# Insert a midpoint between each pair of coarse faces → 281 faces, 280 layers
-Nz = 2 * Nz_copernicus
-r_faces = zeros(Nz + 1)
-for k in 1:Nz_copernicus
-    r_faces[2k - 1] = coarse_faces[k]
-    r_faces[2k]     = (coarse_faces[k] + coarse_faces[k+1]) / 2
-end
-r_faces[end] = coarse_faces[end]
-
+r_faces = copernicus_z_faces() # 280 levels reconstructed from data/zc_copernicus.nc
+Nz = length(r_faces) - 1
 z_faces = MutableVerticalDiscretization(r_faces)
 
-# To run on Distributed architectures (for example 4 ranks in x and 4 in y):
+# To run on distributed architectures (for example 4 ranks in x and 4 in y):
 # arch = Distributed(arch, partition = Partition(x = 4, y = 4))
 
 grid = LatitudeLongitudeGrid(arch;
@@ -70,25 +47,28 @@ grid = LatitudeLongitudeGrid(arch;
                              z = z_faces,
                              halo = (7, 7, 7))
 
-# ### Bathymetry Interpolation
+# ### High-resolution Mediterranean bathymetry
 #
-# The script interpolates bathymetric data onto the grid, ensuring that the model accurately represents
-# the sea floor's topography. Parameters such as `minimum_depth` and `interpolation_passes`
-# are adjusted to refine the bathymetry representation.
+# `MEDSEABathymetry` registers the static bottom topography of the Copernicus product
+# `MEDSEA_ANALYSISFORECAST_PHY_006_013` (~4.2 km) as a NumericalEarth dataset, downloaded through the
+# Copernicus Marine "Data Access" service. Downloading requires the `COPERNICUS_USERNAME` and
+# `COPERNICUS_PASSWORD` environment variables. Replace the dataset with `ETOPO2022()` for the global
+# default bathymetry.
 
-bottom_height = regrid_bathymetry(grid,
+bathymetry = Metadatum(:bottom_height; dataset = MEDSEABathymetry(), dir = "./data")
+
+bottom_height = regrid_bathymetry(grid, bathymetry;
                                   minimum_depth = 5,
-                                  interpolation_passes = 1,
+                                  interpolation_passes = 5,
                                   major_basins = 1)
 
-grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_map=true)
+grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_map = true)
 
-# ## Open Boundary Conditions at Gibraltar using GLORYS
+# ## Open boundary conditions at Gibraltar using GLORYS
 #
-# Instead of restoring to ECCO data near Gibraltar, we use open boundary conditions (OBCs)
-# on the western boundary of the domain (just outside the Strait of Gibraltar at λ₁ = -8.6°).
-# The external data for the OBCs comes from the GLORYS reanalysis dataset.
-# We use the Orlanski radiation scheme with adaptive nudging (Marchesiello et al. 2001).
+# Instead of restoring to global data near Gibraltar, we impose open boundary conditions on the western
+# boundary (just outside the Strait at λ₁ = -8.6°), fed by the GLORYS reanalysis: a baroclinic `Radiation`
+# condition and a barotropic `Flather` condition, combined with a sponge layer (see the `OceanMed` helpers).
 
 start_date = DateTime(1993, 1, 1)
 end_date   = DateTime(1994, 1, 1)
@@ -100,158 +80,72 @@ bbox = BoundingBox(longitude = (λ₁ - 2, λ₂ + 2),
 
 dir = "./data"
 
-u_meta = Metadata(:u_velocity;  dataset, dir, bounding_box=bbox, start_date, end_date)
-v_meta = Metadata(:v_velocity;  dataset, dir, bounding_box=bbox, start_date, end_date)
-T_meta = Metadata(:temperature; dataset, dir, bounding_box=bbox, start_date, end_date)
-S_meta = Metadata(:salinity;    dataset, dir, bounding_box=bbox, start_date, end_date)
+u_meta = Metadata(:u_velocity;   dataset, dir, bounding_box = bbox, start_date, end_date)
+v_meta = Metadata(:v_velocity;   dataset, dir, bounding_box = bbox, start_date, end_date)
+T_meta = Metadata(:temperature;  dataset, dir, bounding_box = bbox, start_date, end_date)
+S_meta = Metadata(:salinity;     dataset, dir, bounding_box = bbox, start_date, end_date)
+η_meta = Metadata(:free_surface; dataset, dir, bounding_box = bbox, start_date, end_date)
 
-# Load GLORYS data as FieldTimeSeries interpolated onto the simulation grid
-u_glorys = FieldTimeSeries(u_meta, grid; time_indices_in_memory=2)
-v_glorys = FieldTimeSeries(v_meta, grid; time_indices_in_memory=2)
-T_glorys = FieldTimeSeries(T_meta, grid; time_indices_in_memory=2)
-S_glorys = FieldTimeSeries(S_meta, grid; time_indices_in_memory=2)
+# Load GLORYS data as FieldTimeSeries interpolated onto the simulation grid. Inpainting fills the
+# GLORYS land/under-bathymetry points so the western boundary column has valid data at depth.
+u_glorys = FieldTimeSeries(u_meta, grid; time_indices_in_memory = 2, inpainting = 100)
+v_glorys = FieldTimeSeries(v_meta, grid; time_indices_in_memory = 2, inpainting = 100)
+T_glorys = FieldTimeSeries(T_meta, grid; time_indices_in_memory = 2, inpainting = 100)
+S_glorys = FieldTimeSeries(S_meta, grid; time_indices_in_memory = 2, inpainting = 100)
+η_glorys = FieldTimeSeries(η_meta, grid; time_indices_in_memory = 2, inpainting = 100)
 
-# Discrete boundary condition function: extracts the GLORYS value at the western boundary
-@inline function west_boundary_value(j, k, grid, clock, model_fields, fts)
-    time = Time(clock.time)
-    return @inbounds fts[1, j, k, time]
-end
-
-# ## Sponge layers
+# ## Forcing and boundary conditions
 #
-# Radiation OBCs are imperfect — Orlanski diagnoses a single phase speed but
-# internal waves have multiple baroclinic modes. A sponge layer near the
-# western boundary damps waves before they reach the boundary, reducing reflections.
-# The sponge uses a cos²(πd/2W) profile that ramps smoothly from 1 at the
-# boundary to 0 at the interior edge of the sponge region.
+# The western (Gibraltar) boundary is the only open edge. Its baroclinic velocities and tracers get an
+# Orlanski `Radiation` open boundary, while the barotropic transport gets a `Flather` condition — both
+# fed by GLORYS. A `DatasetRestoring` sponge just inside the boundary complements them by relaxing the
+# near-boundary interior towards GLORYS (see the `OceanMed` helpers).
 
-@inline function sponge_mask(λ, p)
-    d = λ - p.λ₁  # distance from west boundary (positive going east)
-    return ifelse(d < p.W, cospi(d / (2 * p.W))^2, zero(d))
-end
+forcing = gibraltar_sponge_forcings(grid, T_meta, S_meta, u_meta, v_meta;
+                                    west_longitude = λ₁,
+                                    sponge_width = 2.0,             # degrees (~200 km)
+                                    tracer_rate = 1 / 1days,
+                                    velocity_rate = 1 / 20minutes)
 
-@inline function u_sponge_forcing(i, j, k, grid, clock, fields, p)
-    λ = xnode(i, grid, Face())
-    μ = sponge_mask(λ, p)
-    time = Time(clock.time)
-    u_ext = @inbounds p.fts[i, j, k, time]
-    return -p.rate * μ * (@inbounds fields.u[i, j, k] - u_ext)
-end
+boundary_conditions = gibraltar_boundary_conditions(grid, u_glorys, v_glorys, T_glorys, S_glorys, η_glorys;
+                                                    inflow_timescale = 1days,   # relax to GLORYS on inflow
+                                                    outflow_timescale = Inf)    # let outgoing waves radiate freely
 
-@inline function v_sponge_forcing(i, j, k, grid, clock, fields, p)
-    λ = xnode(i, grid, Center())
-    μ = sponge_mask(λ, p)
-    time = Time(clock.time)
-    v_ext = @inbounds p.fts[i, j, k, time]
-    return -p.rate * μ * (@inbounds fields.v[i, j, k] - v_ext)
-end
-
-@inline function T_sponge_forcing(i, j, k, grid, clock, fields, p)
-    λ = xnode(i, grid, Center())
-    μ = sponge_mask(λ, p)
-    time = Time(clock.time)
-    T_ext = @inbounds p.fts[i, j, k, time]
-    return -p.rate * μ * (@inbounds fields.T[i, j, k] - T_ext)
-end
-
-@inline function S_sponge_forcing(i, j, k, grid, clock, fields, p)
-    λ = xnode(i, grid, Center())
-    μ = sponge_mask(λ, p)
-    time = Time(clock.time)
-    S_ext = @inbounds p.fts[i, j, k, time]
-    return -p.rate * μ * (@inbounds fields.S[i, j, k] - S_ext)
-end
-
-sponge_width = 2.0  # degrees (~200 km)
-sponge_rate  = 1 / 1hour
-
-u_sponge = Forcing(u_sponge_forcing, discrete_form=true, parameters=(; λ₁, W=sponge_width, rate=sponge_rate, fts=u_glorys))
-v_sponge = Forcing(v_sponge_forcing, discrete_form=true, parameters=(; λ₁, W=sponge_width, rate=sponge_rate, fts=v_glorys))
-T_sponge = Forcing(T_sponge_forcing, discrete_form=true, parameters=(; λ₁, W=sponge_width, rate=sponge_rate, fts=T_glorys))
-S_sponge = Forcing(S_sponge_forcing, discrete_form=true, parameters=(; λ₁, W=sponge_width, rate=sponge_rate, fts=S_glorys))
-
-# ## Constructing boundary conditions
+# ## Constructing the simulation
 #
-# We need to construct full FieldBoundaryConditions that include:
-# - Top: surface flux fields (filled by the coupled model)
-# - Bottom: quadratic bottom drag
-# - Immersed: immersed boundary drag
-# - West: Radiation OBCs with GLORYS external data
-
-# Surface flux fields (filled by OceanSeaIceModel during coupling)
-zonal_momentum_flux      = Field{Face, Center, Nothing}(grid)
-meridional_momentum_flux = Field{Center, Face, Nothing}(grid)
-temperature_flux         = Field{Center, Center, Nothing}(grid)
-salinity_flux            = Field{Center, Center, Nothing}(grid)
-
-# Bottom drag parameters
-drag_parameters = (μ = 0.003, Uᴮ = 0.05)
-
-# Radiation OBC relaxation timescales
-outflow_timescale = Inf    # let outgoing waves pass freely
-inflow_timescale  = 300.0  # nudge on inflow (5 minutes, Marchesiello et al. 2001)
-
-u_bcs = FieldBoundaryConditions(
-    top      = FluxBoundaryCondition(zonal_momentum_flux),
-    bottom   = FluxBoundaryCondition(u_quadratic_bottom_drag, discrete_form=true, parameters=drag_parameters),
-    immersed = ImmersedBoundaryCondition(bottom=FluxBoundaryCondition(u_immersed_bottom_drag, discrete_form=true, parameters=drag_parameters)),
-    west     = RadiationBoundaryCondition(west_boundary_value; discrete_form=true, parameters=u_glorys,
-                                          outflow_relaxation_timescale=outflow_timescale, inflow_relaxation_timescale=inflow_timescale))
-
-v_bcs = FieldBoundaryConditions(
-    top      = FluxBoundaryCondition(meridional_momentum_flux),
-    bottom   = FluxBoundaryCondition(v_quadratic_bottom_drag, discrete_form=true, parameters=drag_parameters),
-    immersed = ImmersedBoundaryCondition(bottom=FluxBoundaryCondition(v_immersed_bottom_drag, discrete_form=true, parameters=drag_parameters)),
-    west     = RadiationBoundaryCondition(west_boundary_value; discrete_form=true, parameters=v_glorys,
-                                          outflow_relaxation_timescale=outflow_timescale, inflow_relaxation_timescale=inflow_timescale))
-
-T_bcs = FieldBoundaryConditions(
-    top  = FluxBoundaryCondition(temperature_flux),
-    west = RadiationBoundaryCondition(west_boundary_value; discrete_form=true, parameters=T_glorys,
-                                      outflow_relaxation_timescale=outflow_timescale, inflow_relaxation_timescale=inflow_timescale))
-
-S_bcs = FieldBoundaryConditions(
-    top  = FluxBoundaryCondition(salinity_flux),
-    west = RadiationBoundaryCondition(west_boundary_value; discrete_form=true, parameters=S_glorys,
-                                      outflow_relaxation_timescale=outflow_timescale, inflow_relaxation_timescale=inflow_timescale))
-
-# Constructing the Simulation
-#
-# We construct an ocean simulation that evolves two tracers, temperature (:T), salinity (:S)
-# with OBCs on the western boundary.
+# An ocean simulation that evolves temperature (:T) and salinity (:S) with the open western boundary.
+# The split-explicit free surface carries the barotropic mode that the `Flather` boundary acts on.
 
 momentum_advection = WENOVectorInvariant()
-tracer_advection = WENO(order = 7)
-timestepper = :SplitRungeKutta3
+tracer_advection   = WENO(order = 7)
+free_surface       = SplitExplicitFreeSurface(grid; substeps = 80)
 
 ocean = ocean_simulation(grid;
                          momentum_advection,
                          tracer_advection,
-                         forcing = (u=u_sponge, v=v_sponge, T=T_sponge, S=S_sponge),
-                         boundary_conditions = (u=u_bcs, v=v_bcs, T=T_bcs, S=S_bcs))
+                         free_surface,
+                         forcing,
+                         boundary_conditions)
 
-# Initializing the model
-#
 # Initialize temperature and salinity from GLORYS data.
+set!(ocean.model, T = Metadatum(:temperature; date = start_date, dataset = GLORYSMonthly()),
+                  S = Metadatum(:salinity;    date = start_date, dataset = GLORYSMonthly()))
 
-set!(ocean.model, T=Metadatum(:temperature; date=start_date, dataset=GLORYSMonthly()),
-                  S=Metadatum(:salinity;    date=start_date, dataset=GLORYSMonthly()))
+# ## Atmospheric forcing
+#
+# We force the model with the JRA55-do dataset (surface heat fluxes and wind stress). Only 10 time
+# instances are held in memory at a time and updated as the model progresses.
 
-## Adding an atmospheric forcing
+atmosphere = JRA55PrescribedAtmosphere(arch; backend = JRA55NetCDFBackend(10),
+                                       include_rivers_and_icebergs = true, dir = "./data")
 
-# we use JRA55-do dataset to force the model with surface heat fluxes and wind stress
-# Only 10 time instances of the JRA55 datasets are loaded in memory at each time
-# these are updated as the model progresses
-atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(10), include_rivers_and_icebergs=true, dir="./data")
-
-# This uses a quite simple ocean albedo model (latitude dependent) and
-# an ocean emissivity of 0.97. It is all customizable
 radiation = Radiation()
 
-# The coupled model! (we have no sea-ice so we do not add it)
+# The coupled model (no sea ice).
 coupled_model = OceanSeaIceModel(ocean; atmosphere, radiation)
 
-# The coupled simulation:
+# ## The coupled simulation
+
 Δt = 10
 stop_time = 5days
 simulation = Simulation(coupled_model; Δt, stop_time)
@@ -270,19 +164,22 @@ end
 
 simulation.callbacks[:progress] = Callback(progress, IterationInterval(10))
 
-#Versione con uscite ogni 24 ore
+# Surface fields written every 24 hours.
 simulation.output_writers[:surface_fields] = JLD2Writer(ocean.model, merge(ocean.model.tracers, ocean.model.velocities),
-                                                       schedule = TimeInterval(24hours),
-                                                       indices = (:, :, grid.Nz),
-                                                       overwrite_existing = true,
-                                                       filename = "med_surface_fields.jld2")
+                                                        schedule = TimeInterval(24hours),
+                                                        indices = (:, :, grid.Nz),
+                                                        overwrite_existing = true,
+                                                        filename = "med_surface_fields.jld2")
 
 ocean.output_writers[:checkpointer] = Checkpointer(ocean.model,
-						   schedule = IterationInterval(86400),
-						   overwrite_existing = true,
-						   prefix = "mediterranean")
+                                                   schedule = IterationInterval(86400),
+                                                   overwrite_existing = true,
+                                                   prefix = "mediterranean")
 
-## Running the Simulation
+# ## Running the simulation
+#
+# A short spin-up at a small time step, then a year-long run at a larger time step.
+
 run!(simulation)
 
 simulation.Δt = 2minutes
@@ -290,18 +187,15 @@ simulation.stop_time = 365days
 
 run!(simulation)
 
-# Record a video
+# ## Recording a video
 #
-# Let's read the data and record a video of the Mediterranean Sea's surface
-# (1) Zonal velocity (u)
-# (2) Meridional velocity (v)
-# (3) Temperature (T)
-# (4) Salinity (S)
+# Read back the surface fields and record a video of (1) zonal velocity, (2) meridional velocity,
+# (3) temperature, and (4) salinity.
 
-u_series = FieldTimeSeries("med_surface_fields.jld2", "u"; backend=OnDisk())
-v_series = FieldTimeSeries("med_surface_fields.jld2", "v"; backend=OnDisk())
-T_series = FieldTimeSeries("med_surface_fields.jld2", "T"; backend=OnDisk())
-S_series = FieldTimeSeries("med_surface_fields.jld2", "S"; backend=OnDisk())
+u_series = FieldTimeSeries("med_surface_fields.jld2", "u"; backend = OnDisk())
+v_series = FieldTimeSeries("med_surface_fields.jld2", "v"; backend = OnDisk())
+T_series = FieldTimeSeries("med_surface_fields.jld2", "T"; backend = OnDisk())
+S_series = FieldTimeSeries("med_surface_fields.jld2", "S"; backend = OnDisk())
 iter = Observable(1)
 
 u = @lift(u_series[$iter])

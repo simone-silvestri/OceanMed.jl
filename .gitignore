@@ -2,3 +2,10 @@
 *.png
 *.jld2
 *.mp4
+
+# Downloaded forcing/boundary data and the auto-generated conda environment
+.CondaPkg/
+data/*.nc
+
+# Keep committed documentation assets despite the blanket *.png rule above
+!docs/assets/*.png
