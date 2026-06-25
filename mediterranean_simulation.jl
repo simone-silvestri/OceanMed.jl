@@ -22,16 +22,19 @@ using Dates
 
 # ## Grid configuration for the Mediterranean Sea
 #
-# The grid spans the Mediterranean in longitude (λ₁, λ₂) and latitude (φ₁, φ₂) at roughly 1/30ᵗʰ of a
-# degree, with a stretched vertical grid reconstructed from the Copernicus levels (280 layers).
+# The grid spans the Mediterranean in longitude (λ₁, λ₂) and latitude (φ₁, φ₂) at 1/24ᵗʰ of a degree —
+# the native resolution of the MEDSEA bathymetry, the finest topography available for this domain — with
+# a stretched vertical grid reconstructed from the Copernicus levels (280 layers).
 
 arch = GPU()
 
 const λ₁, λ₂ = (-8.6, 36.5) # domain in longitude
 const φ₁, φ₂ = (  30, 48)   # domain in latitude
 
-Nx = 500 * ceil(Int, λ₂ - λ₁) # ~1/30ᵗʰ of a degree resolution
-Ny = 500 * ceil(Int, φ₂ - φ₁) # ~1/30ᵗʰ of a degree resolution
+const resolution = 1/24 # degrees, matching the MEDSEA bathymetry native grid
+
+Nx = round(Int, (λ₂ - λ₁) / resolution)
+Ny = round(Int, (φ₂ - φ₁) / resolution)
 
 r_faces = copernicus_z_faces() # 280 levels reconstructed from data/zc_copernicus.nc
 Nz = length(r_faces) - 1

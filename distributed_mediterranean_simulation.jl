@@ -34,8 +34,10 @@ arch = Distributed(GPU(), partition = Partition(4, 2), synchronized_communicatio
 const λ₁, λ₂ = (-8.6, 42) # domain in longitude
 const φ₁, φ₂ = (  30, 48) # domain in latitude
 
-Nx = 60 * ceil(Int, λ₂ - λ₁) # 1/60ᵗʰ of a degree resolution
-Ny = 60 * ceil(Int, φ₂ - φ₁) # 1/60ᵗʰ of a degree resolution
+const resolution = 1/24 # degrees, matching the MEDSEA bathymetry native grid
+
+Nx = round(Int, (λ₂ - λ₁) / resolution)
+Ny = round(Int, (φ₂ - φ₁) / resolution)
 
 r_faces = copernicus_z_faces() # 280 levels reconstructed from data/zc_copernicus.nc
 Nz = length(r_faces) - 1
