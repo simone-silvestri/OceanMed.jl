@@ -7,6 +7,7 @@ using Downloads
 using NCDatasets
 using Oceananigans
 using NumericalEarth.Lands
+using Oceananigans.Operators: Azᶜᶜᶜ
 using Oceananigans.Grids: AbstractGrid
 using Oceananigans.Architectures: AbstractArchitecture
 using NumericalEarth.DataWrangling: DataWrangling, Metadata, Metadatum
@@ -16,6 +17,8 @@ abstract type AbstractRiverRunoff end
 
 const RiverMetadata  = Metadata{<:AbstractRiverRunoff}
 const RiverMetadatum = Metadatum{<:AbstractRiverRunoff}
+
+const reference_freshwater_density = 1000.0
 
 dardanelles_inflow1 = [0.115501732, 0.15197596, 0.202634618, 0.253293276, 0.289767504, 0.303951919, 0.289767504, 0.253293276, 0.202634618, 0.15197596, 0.115501732, 0.101317309]
 dardanelles_inflow2 = [0.115572236, 0.152068734, 0.202758297, 0.25344789, 0.289944381, 0.304137468, 0.289944381, 0.25344789, 0.202758297, 0.152068734, 0.115572236, 0.101379149]
@@ -105,6 +108,13 @@ function DataWrangling.retrieve_data(metadata::RiverRunoffMetadatum)
     data[1064, 237] = interpolate_monthly(dardanelles_inflow2, metadata.dates)
     data[1064, 238] = interpolate_monthly(dardanelles_inflow3, metadata.dates)
 
+    # kg m⁻² s⁻¹ → volumetric discharge m³ s⁻¹, the unit build_river_routing expects
+    grid = DataWrangling.native_grid(metadata)
+    for j in axes(data, 2)
+        cell_area = Azᶜᶜᶜ(1, j, 1, grid)
+        @views data[:, j] .*= cell_area / reference_freshwater_density
+    end
+
     return data
 end
 
@@ -138,7 +148,7 @@ function MediterraneanPrescribedLand(grid::AbstractGrid;
                                      dir = "./",
                                      time_indices_in_memory = 12,
                                      time_indexing = Oceananigans.OutputReaders.Cyclical(),
-                                     freshwater_density = 1000,
+                                     freshwater_density = reference_freshwater_density,
                                      maximum_search_radius = 5,
                                      other_kw...)
 
