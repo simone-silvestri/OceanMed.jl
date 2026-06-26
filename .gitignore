@@ -6,6 +6,8 @@
 # Downloaded forcing/boundary data and the auto-generated conda environment
 .CondaPkg/
 data/*.nc
+*.nc
+*.png
 
 # Keep committed documentation assets despite the blanket *.png rule above
 !docs/assets/*.png
