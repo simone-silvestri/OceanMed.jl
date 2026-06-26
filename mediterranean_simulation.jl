@@ -101,7 +101,7 @@ Sglorys = FieldTimeSeries(Sm, grid; time_indices_in_memory = 2, inpainting = 100
 
 # ## Forcing and boundary conditions
 #
-# The western (Gibraltar) boundary is the only open edge. Its baroclinic velocities and tracers get an
+# The western (Atlantic) boundary is the only open edge. Its baroclinic velocities and tracers get an
 # Orlanski `Radiation` open boundary, while the barotropic transport gets a `Flather` condition — both
 # fed by GLORYS. A `DatasetRestoring` sponge just inside the boundary complements them by relaxing the
 # near-boundary interior towards GLORYS (see the `OceanMed` helpers).
