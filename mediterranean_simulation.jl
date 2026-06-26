@@ -10,6 +10,7 @@
 using OceanMed
 using OceanMed: MEDSEABathymetry, copernicus_z_faces, atlantic_sponge_forcings, atlantic_boundary_conditions
 using CUDA
+using CopernicusMarine
 using Oceananigans
 using Oceananigans.Units
 using NumericalEarth
@@ -27,7 +28,7 @@ using Dates
 
 arch = GPU()
 
-md = Metadata(:bottom_height, dataset=MEDSEABathymetry())
+md = Metadata(:bottom_height, dataset=MEDSEABathymetry(), dir = "./")
 λ = DataWrangling.longitude_interfaces(md)
 φ = DataWrangling.latitude_interfaces(md)
 
