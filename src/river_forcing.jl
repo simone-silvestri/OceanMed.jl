@@ -105,7 +105,7 @@ function DataWrangling.retrieve_data(metadata::RiverRunoffMetadatum)
 end
 
 function MediterraneanPrescribedLand(arch::AbstractArchitecture; dir = "./", kwargs...)
-    grid = DataWrangling.native_grid(Metadata(:dardanelles_inflow; dataset = RiverRunoff(), dir))
+    grid = DataWrangling.native_grid(Metadata(:freshwater_flux; dataset = RiverRunoff(), dir))
     return MediterraneanPrescribedLand(grid)
 end
 
