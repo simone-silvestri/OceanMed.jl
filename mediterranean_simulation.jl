@@ -51,11 +51,9 @@ grid = LatitudeLongitudeGrid(arch;
 
 # ### High-resolution Mediterranean bathymetry
 #
-# `MEDSEABathymetry` registers the static bottom topography of the Copernicus product
-# `MEDSEA_ANALYSISFORECAST_PHY_006_013` (~4.2 km) as a NumericalEarth dataset, downloaded through the
-# Copernicus Marine "Data Access" service. Downloading requires the `COPERNICUS_USERNAME` and
-# `COPERNICUS_PASSWORD` environment variables. Replace the dataset with `ETOPO2022()` for the global
-# default bathymetry.
+# `MEDSEABathymetry` registers the static, tides-corrected MEDSEA bottom topography (~4.2 km) as a
+# NumericalEarth dataset, downloaded open-access from Dropbox. Replace the dataset with `ETOPO2022()`
+# for the global default bathymetry.
 
 bathymetry = Metadatum(:bottom_height; dataset = MEDSEABathymetry(), dir = "./data")
 
@@ -66,17 +64,18 @@ bottom_height = regrid_bathymetry(grid, bathymetry;
 
 grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_map = true)
 
-λ₁ = first(λnodes(grid, Face()))
-λ₂ =  last(λnodes(grid, Face()))
+λ₁ = first(Oceananigans.on_architecture(CPU(), λnodes(grid, Face())))
+λ₂ =  last(Oceananigans.on_architecture(CPU(), λnodes(grid, Face())))
 
-φ₁ = first(φnodes(grid, Face()))
-φ₂ =  last(φnodes(grid, Face()))
+φ₁ = first(Oceananigans.on_architecture(CPU(),φnodes(grid, Face())))
+φ₂ =  last(Oceananigans.on_architecture(CPU(),φnodes(grid, Face())))
 
-# ## Open boundary conditions at Gibraltar using GLORYS
+# ## Open boundary conditions in the Atlantic using GLORYS
 #
-# Instead of restoring to global data near Gibraltar, we impose open boundary conditions on the western
-# boundary (just outside the Strait at λ₁ = -8.6°), fed by the GLORYS reanalysis: a baroclinic `Radiation`
-# condition and a barotropic `Flather` condition, combined with a sponge layer (see the `OceanMed` helpers).
+# Instead of restoring to global data, we impose open boundary conditions on the Atlantic edges — the
+# western boundary just outside the Strait and the northern/southern edges where the bathymetry reaches
+# the domain — fed by the GLORYS reanalysis: a baroclinic `Radiation` condition and a barotropic
+# `Flather` condition, combined with a sponge layer (see the `OceanMed` helpers).
 
 start_date = DateTime(1993, 1, 1)
 end_date   = DateTime(1994, 1, 1)
@@ -101,16 +100,21 @@ Sglorys = FieldTimeSeries(Sm, grid; time_indices_in_memory = 2, inpainting = 100
 
 # ## Forcing and boundary conditions
 #
-# The western (Gibraltar) boundary is the only open edge. Its baroclinic velocities and tracers get an
-# Orlanski `Radiation` open boundary, while the barotropic transport gets a `Flather` condition — both
-# fed by GLORYS. A `DatasetRestoring` sponge just inside the boundary complements them by relaxing the
-# near-boundary interior towards GLORYS (see the `OceanMed` helpers).
+# The Atlantic edges are open — the western (Gibraltar) boundary plus the northern and southern edges
+# where the bathymetry reaches the domain. Baroclinic velocities and tracers get an Orlanski
+# `Radiation` open boundary, the barotropic transports a `Flather` condition — both fed by GLORYS. A
+# `DatasetRestoring` sponge just inside each open edge complements them by relaxing the near-boundary
+# interior towards GLORYS (see the `OceanMed` helpers).
 
 forcing = atlantic_sponge_forcings(grid, Tm, Sm, um, vm;
-                                    west_longitude = λ₁,
-                                    sponge_width = 2.0,             
-                                    tracer_rate = 1 / 1days,
-                                    velocity_rate = 1 / 20minutes)
+                                    west_longitude  = λ₁,
+                                    south_latitude  = φ₁,           # thin sponge decaying north from the southern edge
+                                    north_latitude  = φ₂,           # thin sponge decaying south from the northern edge
+                                    sponge_width    = 2.0,
+                                    taper_longitude = 0.0,          # N/S sponges vanish east of the Greenwich meridian
+                                    taper_width     = 1.0,
+                                    tracer_rate     = 1 / 1days,
+                                    velocity_rate   = 1 / 20minutes)
 
 boundary_conditions = atlantic_boundary_conditions(grid, uglorys, vglorys, Tglorys, Sglorys, ηglorys;
                                                    inflow_timescale = 1days,   # relax to GLORYS on inflow
@@ -118,8 +122,8 @@ boundary_conditions = atlantic_boundary_conditions(grid, uglorys, vglorys, Tglor
 
 # ## Constructing the simulation
 #
-# An ocean simulation that evolves temperature (:T) and salinity (:S) with the open western boundary.
-# The split-explicit free surface carries the barotropic mode that the `Flather` boundary acts on.
+# An ocean simulation that evolves temperature (:T) and salinity (:S) with the open Atlantic boundaries.
+# The split-explicit free surface carries the barotropic mode that the `Flather` boundaries act on.
 
 momentum_advection = WENOVectorInvariant()
 tracer_advection   = WENO(order = 7)
@@ -137,7 +141,7 @@ set!(ocean.model, T = Tm[1], S = Sm[1])
 
 # ## Atmospheric forcing
 #
-# We force the model with the JRA55-do dataset (surface heat fluxes and wind stress). Only 10 time
+# We force the model with the ERA5 reanalysis (surface heat fluxes and wind stress). Only a few time
 # instances are held in memory at a time and updated as the model progresses.
 
 atmosphere = ERA5PrescribedAtmosphere(arch; dir = "./data", start_date, end_date)

@@ -3,7 +3,6 @@ module BathymetryDatasets
 export MEDSEABathymetry, EMODnetBathymetry
 
 using NCDatasets
-using CopernicusMarine
 using Downloads: Downloads
 using Oceananigans.DistributedComputations: @root
 
@@ -11,20 +10,18 @@ using NumericalEarth.DataWrangling: DataWrangling, AbstractStaticBathymetry,
                                     Metadata, Metadatum, metadata_path
 
 #####
-##### Two Mediterranean bathymetry datasets, normalized to a common signed-bottom-height file
-#####
-##### Both download a raw field, convert it to a `bottom_height` (negative below sea level, positive over
-##### land) stored as variable `z`, and read their native lat–lon grid back from that normalized file.
-##### `regrid_bathymetry` then consumes either one through the generic `AbstractStaticBathymetry` path.
+##### Two Mediterranean bathymetry datasets sharing a signed-bottom-height file (variable `z`, negative
+##### below sea level, positive over land, on a regular lat–lon mesh). MEDSEA is pre-normalized and
+##### downloaded ready to use; EMODnet converts its raw elevation on download. `regrid_bathymetry`
+##### consumes either through the generic `AbstractStaticBathymetry` path.
 #####
 
 """
     MEDSEABathymetry
 
-High-resolution (~1/24°, ≈4.2 km) Mediterranean bathymetry — the static `deptho` of the Copernicus
-Marine product `MEDSEA_ANALYSISFORECAST_PHY_006_013` (dataset `cmems_mod_med_phy_anfc_4.2km_static`,
-part `bathy`). This is the model bathymetry at the model resolution. Requires Copernicus credentials in
-`COPERNICUS_USERNAME` / `COPERNICUS_PASSWORD`.
+High-resolution (~1/24°, ≈4.2 km) Mediterranean bathymetry — the tides-corrected NEMO bathymetry
+`bathy_tides_neb2.nc` on the 1307×380 MEDSEA grid (variable `Bathymetry`, positive depth in metres,
+zero over land). Downloaded open-access from Dropbox.
 """
 struct MEDSEABathymetry <: AbstractStaticBathymetry end
 
@@ -121,9 +118,8 @@ function write_normalized_bathymetry(output_path, longitude, latitude, bottom_he
     return output_path
 end
 
-# raw → signed bottom height (negative below sea level, positive over land). `missing` → land.
-to_bottom_height(::MEDSEABathymetry,  depth)     = ismissing(depth)     ? land_height : -Float64(depth)
-to_bottom_height(::EMODnetBathymetry, elevation) = ismissing(elevation) ? land_height :  Float64(elevation)
+# raw elevation → signed bottom height (negative below sea level, positive over land); `missing` → land.
+to_bottom_height(::EMODnetBathymetry, elevation) = ismissing(elevation) ? land_height : Float64(elevation)
 
 function normalize_bathymetry(dataset, raw_variable, raw_path, output_path)
     Dataset(raw_path) do raw
@@ -137,53 +133,25 @@ function normalize_bathymetry(dataset, raw_variable, raw_path, output_path)
 end
 
 #####
-##### MEDSEA — Copernicus Marine `deptho`
+##### MEDSEA — tides-corrected NEMO bathymetry, pre-normalized and hosted on Dropbox
 #####
 
-const medsea_dataset_id   = "cmems_mod_med_phy_anfc_4.2km_static"
-const medsea_dataset_part = "bathy"
-const medsea_variable     = "deptho"
+const medsea_url = "https://www.dropbox.com/scl/fi/rzhwkt212yhz9rrtf8p3o/medsea_bottom_height.nc?rlkey=yzn5ja2cyiy0pd3elmno69yt3&st=5q2zyy7b&dl=0"
 
 DataWrangling.metadata_filename(::MEDSEABathymetry, name, date, region) = "medsea_bottom_height.nc"
-medsea_raw_filename() = "medsea_deptho_raw.nc"
-
-function copernicus_credentials()
-    username = get(ENV, "COPERNICUS_USERNAME", nothing)
-    password = get(ENV, "COPERNICUS_PASSWORD", nothing)
-    if isnothing(username) || isnothing(password)
-        @warn "No Copernicus credentials found. Set COPERNICUS_USERNAME and COPERNICUS_PASSWORD to \
-               download the MEDSEA bathymetry. Free registration: https://data.marine.copernicus.eu/register."
-    end
-    return username, password
-end
 
 """
     Downloads.download(metadatum::Metadatum{<:MEDSEABathymetry})
 
-Download the Copernicus MEDSEA static bathymetry and write the normalized signed bottom-height file at
-`metadata_path(metadatum)`. Idempotent.
+Download the pre-normalized MEDSEA signed bottom-height file from Dropbox to `metadata_path(metadatum)`. Idempotent.
 """
 function Downloads.download(metadatum::MEDSEAMetadatum)
     output_path = metadata_path(metadatum)
     isfile(output_path) && return output_path
 
-    username, password = copernicus_credentials()
-    raw_path = joinpath(metadatum.dir, medsea_raw_filename())
-
     @root begin
-        if !isfile(raw_path)
-            @info "Downloading MEDSEA bathymetry ($(medsea_dataset_id)/$(medsea_dataset_part)) to $(metadatum.dir)..."
-            credential_kw = isnothing(username) || isnothing(password) ? NamedTuple() : (; username, password)
-            CopernicusMarine.subset(; dataset_id = medsea_dataset_id,
-                                      dataset_part = medsea_dataset_part,
-                                      variable = ["deptho"],
-                                      output_directory = metadatum.dir,
-                                      output_filename = medsea_raw_filename(),
-                                      coordinates_selection_method = "outside",
-                                      skip_existing = true,
-                                      credential_kw...)
-        end
-        normalize_bathymetry(metadatum.dataset, medsea_variable, raw_path, output_path)
+        @info "Downloading MEDSEA bathymetry to $(metadatum.dir)..."
+        Downloads.download(medsea_url, output_path)
     end
 
     return output_path

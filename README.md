@@ -5,12 +5,12 @@ High-resolution Mediterranean Sea ocean simulations built on
 [NumericalEarth](https://github.com/CliMA/NumericalEarth.jl).
 
 `OceanMed` is both a small reusable module (`src/`) and a set of runnable example scripts. The module
-registers high-resolution Copernicus datasets as NumericalEarth datasets — the MEDSEA and EMODnet
-bathymetries and the CERRA atmospheric reanalysis — and collects the building blocks shared across the
-Mediterranean configurations: vertical-grid construction, the Strait of Gibraltar open boundary
-conditions and sponge layers, and the conservative regridding of the CERRA forcing.
+registers high-resolution datasets as NumericalEarth datasets — the MEDSEA and EMODnet bathymetries and
+the CERRA atmospheric reanalysis — and collects the building blocks shared across the Mediterranean
+configurations: vertical-grid construction, the Atlantic open boundary conditions and sponge layers,
+and the conservative regridding of the CERRA forcing.
 
-![Mediterranean bottom height regridded from the Copernicus 4.2 km bathymetry](docs/assets/mediterranean_bathymetry.png)
+![Mediterranean bottom height regridded from the high-resolution MEDSEA bathymetry](docs/assets/mediterranean_bathymetry.png)
 
 ## What is in here
 
@@ -19,7 +19,7 @@ conditions and sponge layers, and the conservative regridding of the CERRA forci
 | `src/OceanMed.jl` | Module entry point and exports. |
 | `src/bathymetry_datasets.jl` | `MEDSEABathymetry` and `EMODnetBathymetry` — Mediterranean bathymetries registered as NumericalEarth datasets. |
 | `src/vertical_grids.jl` | `copernicus_z_faces` — the stretched Copernicus vertical grid. |
-| `src/open_boundary_conditions.jl` | Gibraltar open boundary conditions and sponge forcings. |
+| `src/open_boundary_conditions.jl` | Atlantic (west/north/south) open boundary conditions and sponge forcings. |
 | `src/cerra_forcing.jl` | CERRA dataset, prescribed atmosphere & radiation on the native Lambert grid. |
 | `src/regrid_cerra_state.jl` | Conservative regridding of the CERRA atmosphere/radiation onto the exchange grid at coupling time. |
 | `mediterranean_simulation.jl` | The main Mediterranean example (serial / GPU). |
@@ -30,8 +30,8 @@ conditions and sponge layers, and the conservative regridding of the CERRA forci
 ## Requirements
 
 - Julia ≥ 1.10.
-- A [Copernicus Marine](https://data.marine.copernicus.eu/register) account (free) for the bathymetry
-  and the GLORYS boundary data, exported as environment variables:
+- A [Copernicus Marine](https://data.marine.copernicus.eu/register) account (free) for the GLORYS
+  boundary data, exported as environment variables:
 
   ```bash
   export COPERNICUS_USERNAME="your-username"
@@ -39,7 +39,7 @@ conditions and sponge layers, and the conservative regridding of the CERRA forci
   ```
 
   The `copernicusmarine` command-line tool is installed automatically through `CopernicusMarine.jl`
-  (via CondaPkg) on first use.
+  (via CondaPkg) on first use. The MEDSEA bathymetry is a plain open-access Dropbox download (no credentials).
 
 - For CERRA atmospheric forcing, a [Copernicus Climate Data Store](https://cds.climate.copernicus.eu)
   account with a `~/.cdsapirc` credentials file, and a one-time acceptance of the CERRA licence on the
@@ -59,11 +59,10 @@ Pkg.instantiate()
 
 ## The high-resolution Mediterranean bathymetry
 
-`MEDSEABathymetry` registers the static bottom topography (`deptho`) of the Copernicus product
-[`MEDSEA_ANALYSISFORECAST_PHY_006_013`](https://data.marine.copernicus.eu/product/MEDSEA_ANALYSISFORECAST_PHY_006_013/description)
-(≈4.2 km, 1/24°) as a NumericalEarth dataset, so it plugs straight into `regrid_bathymetry`. The
-download (dataset `cmems_mod_med_phy_anfc_4.2km_static`, part `bathy`) is normalized from a positive
-`deptho` to a signed bottom height before regridding.
+`MEDSEABathymetry` registers the static, tides-corrected MEDSEA bottom topography (≈4.2 km, 1/24°, on
+the 1307×380 MEDSEA grid) as a NumericalEarth dataset, so it plugs straight into `regrid_bathymetry`.
+It is downloaded open-access from Dropbox as a ready-to-use signed bottom-height file (no credentials,
+no normalization step).
 
 ```julia
 using OceanMed, NumericalEarth, Oceananigans
@@ -161,10 +160,11 @@ European field is fetched each time.
 julia --project=. mediterranean_simulation.jl
 ```
 
-The script builds a ~1/30° Mediterranean grid with the 280-level Copernicus vertical grid and the
-high-resolution bathymetry, then runs a coupled ocean simulation forced by JRA55-do, with the only
-open edge — the Strait of Gibraltar on the west — handled by GLORYS-fed open boundary conditions and
-a sponge layer. It is set up for `GPU()`; switch `arch = CPU()` for a (much slower) CPU run.
+The script builds a ~1/24° Mediterranean grid with the 280-level Copernicus vertical grid and the
+high-resolution bathymetry, then runs a coupled ocean simulation forced by ERA5, with the open Atlantic
+edges — the Strait of Gibraltar on the west plus the northern and southern edges — handled by
+GLORYS-fed open boundary conditions and sponge layers. It is set up for `GPU()`; switch `arch = CPU()`
+for a (much slower) CPU run.
 
 The boundary data can be pre-downloaded on a login node with `download_glorys_med.jl`.
 
@@ -172,16 +172,17 @@ The boundary data can be pre-downloaded on a login node with `download_glorys_me
 
 - `copernicus_z_faces(; filepath, refinement)` — vertical face positions of the Copernicus
   Mediterranean grid, refined by an integer factor (default 2 → 280 levels).
-- `MEDSEABathymetry` — the Copernicus Mediterranean bathymetry dataset (≈4.2 km, see above).
+- `MEDSEABathymetry` — the tides-corrected MEDSEA bathymetry dataset (≈4.2 km, see above).
 - `EMODnetBathymetry` — the EMODnet DTM 2024 bathymetry (≈115 m, region-subset, see above).
 - `atlantic_boundary_conditions(grid, u, v, T, S, η; inflow_timescale, outflow_timescale)` — the
-  western open boundary: baroclinic `Radiation` conditions on `u, v, T, S` and a barotropic `Flather`
-  condition on the transport `U`, all fed by GLORYS `FieldTimeSeries`. Use with a
-  `SplitExplicitFreeSurface`.
-- `atlantic_sponge_forcings(grid, T_meta, S_meta, u_meta, v_meta; west_longitude, sponge_width, ...)`
-  — `DatasetRestoring` forcings that relax the prognostic fields towards GLORYS inside a Gaussian
-  sponge just behind the western boundary.
-- `WesternSpongeMask(west_longitude, width)` — the Gaussian sponge mask used above.
+  Atlantic open boundaries (west, north, south): baroclinic `Radiation` conditions on `u, v, T, S` and
+  barotropic `Flather` conditions on the transports `U` (west) and `V` (north/south), all fed by GLORYS
+  `FieldTimeSeries`. Use with a `SplitExplicitFreeSurface`.
+- `atlantic_sponge_forcings(grid, T_meta, S_meta, u_meta, v_meta; west_longitude, south_latitude,
+  north_latitude, sponge_width, ...)` — `DatasetRestoring` forcings that relax the prognostic fields
+  towards GLORYS inside thin Gaussian sponges just inside the western, northern, and southern edges.
+- `AtlanticSpongeMask(west_longitude, south_latitude, north_latitude, width, taper_longitude, taper_width)`
+  — the Gaussian sponge mask used above.
 - `CERRAReanalysis` — the CERRA single-levels dataset (Copernicus CDS), used via `Metadata`/`FieldTimeSeries`.
 - `cerra_native_grid(arch)` — CERRA's native Lambert Conformal Conic grid as an Oceananigans grid.
 - `CERRAPrescribedAtmosphere(arch; start_date, end_date, dir)` — a `PrescribedAtmosphere` on the native

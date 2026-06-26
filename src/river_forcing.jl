@@ -10,7 +10,7 @@ using NumericalEarth.Lands
 using Oceananigans.Grids: AbstractGrid
 using Oceananigans.Architectures: AbstractArchitecture
 using NumericalEarth.DataWrangling: DataWrangling, Metadata, Metadatum
-using OceanMed.BathymetryDatasets: MEDSEABathymetry
+using OceanMed.BathymetryDatasets: MEDSEABathymetry, interfaces_from_centers
 
 abstract type AbstractRiverRunoff end
 
@@ -21,6 +21,21 @@ dardanelles_inflow1 = [0.115501732, 0.15197596, 0.202634618, 0.253293276, 0.2897
 dardanelles_inflow2 = [0.115572236, 0.152068734, 0.202758297, 0.25344789, 0.289944381, 0.304137468, 0.289944381, 0.25344789, 0.202758297, 0.152068734, 0.115572236, 0.101379149]
 dardanelles_inflow3 = [0.115642883, 0.152161688, 0.202882245, 0.253602803, 0.290121615, 0.304323375, 0.290121615, 0.253602803, 0.202882245, 0.152161688, 0.115642883, 0.101441123]
 
+const month_anchors = dayofyear.(DateTime.(2004, 1:12, 15))
+
+function interpolate_monthly(monthly, date)
+    d = dayofyear(date)
+    if d < first(month_anchors)
+        d₀, d₁, v₀, v₁ = last(month_anchors) - 366, first(month_anchors), monthly[12], monthly[1]
+    elseif d ≥ last(month_anchors)
+        d₀, d₁, v₀, v₁ = last(month_anchors), first(month_anchors) + 366, monthly[12], monthly[1]
+    else
+        m = searchsortedlast(month_anchors, d)
+        d₀, d₁, v₀, v₁ = month_anchors[m], month_anchors[m+1], monthly[m], monthly[m+1]
+    end
+    return v₀ + (v₁ - v₀) * (d - d₀) / (d₁ - d₀)
+end
+
 #####
 ##### River Runoff
 #####
@@ -30,19 +45,9 @@ struct RiverRunoff <: AbstractRiverRunoff end
 const RiverRunoffMetadata  = Metadata{<:RiverRunoff}
 const RiverRunoffMetadatum = Metadatum{<:RiverRunoff}
 
-DataWrangling.all_dates(::RiverRunoff, var) = DateTime(1900, 1, 1) : Month(1) : DateTime(1900, 12, 1)
+DataWrangling.all_dates(::RiverRunoff, var) = DateTime(2004, 1, 1) : Day(1) : DateTime(2004, 12, 31)
 DataWrangling.is_three_dimensional(::RiverRunoffMetadata) = false
 DataWrangling.default_inpainting(::RiverRunoffMetadata) = nothing
-
-function interfaces_from_centers(centers)
-    spacing1 = centers[2] - centers[1]
-    spacinge = centers[end] - centers[end-1]
-    interfaces = zeros(length(centers) + 1)
-    interfaces[1] = centers[1] - spacing1 / 2
-    interfaces[end] = centers[end] + spacinge / 2
-    interfaces[2:end-1] .= (centers[1:end-1] .+ centers[2:end]) ./ 2
-    return interfaces
-end
 
 DataWrangling.metadata_url(m::RiverRunoffMetadata) = "https://www.dropbox.com/scl/fi/o8c3cvrl6y5n6fa6wye8k/runoff_1d_nomask_ly_climatology_efasv5.nc?rlkey=xi1irp6bz1vo293kd6iygwvet&st=5td4z9b1&dl=0"
 
@@ -91,17 +96,37 @@ function DataWrangling.retrieve_data(metadata::RiverRunoffMetadatum)
     path = DataWrangling.metadata_path(metadata)
     name = DataWrangling.dataset_variable_name(metadata)
 
-    # NetCDF shenanigans
+    day = dayofyear(metadata.dates)
     ds = Dataset(path)
-    data = ds[name][:, :, 1]
+    data = ds[name][:, :, day]
     close(ds)
-    
-    month = Dates.month(metadata.dates)
-    data[1064, 236, 1] = dardanelles_inflow1[month]
-    data[1064, 237, 1] = dardanelles_inflow2[month]
-    data[1064, 238, 1] = dardanelles_inflow3[month]
+
+    data[1064, 236] = interpolate_monthly(dardanelles_inflow1, metadata.dates)
+    data[1064, 237] = interpolate_monthly(dardanelles_inflow2, metadata.dates)
+    data[1064, 238] = interpolate_monthly(dardanelles_inflow3, metadata.dates)
 
     return data
+end
+
+const dardanelles_outlets = ((1064, 236), (1064, 237), (1064, 238))
+
+function runoff_outlet_indices(discharge)
+    grid = discharge.grid
+
+    runoff  = Array(interior(discharge))[:, :, 1]
+    indices = findall(q -> !iszero(q) & !isnan(q), runoff)
+    cells   = Set((I[1], I[2]) for I in indices)
+    union!(cells, dardanelles_outlets)
+
+    outlet_i = [c[1] for c in cells]
+    outlet_j = [c[2] for c in cells]
+
+    λc = Array(λnodes(grid, Center(), Center(), Center()))
+    φc = Array(φnodes(grid, Center(), Center(), Center()))
+    outlet_λ = [λc[i] for i in outlet_i]
+    outlet_φ = [φc[j] for j in outlet_j]
+
+    return outlet_i, outlet_j, outlet_λ, outlet_φ
 end
 
 function MediterraneanPrescribedLand(arch::AbstractArchitecture; dir = "./", kwargs...)
@@ -124,7 +149,7 @@ function MediterraneanPrescribedLand(grid::AbstractGrid;
     river_runoff = FieldTimeSeries(Metadata(:freshwater_flux; dataset = RiverRunoff(), dir), arch; kw...)
 
     snapshot = river_runoff[1]
-    outlet_i, outlet_j, outlet_λ, outlet_φ = Lands.coastal_outlet_indices(snapshot)
+    outlet_i, outlet_j, outlet_λ, outlet_φ = runoff_outlet_indices(snapshot)
     routing = Lands.build_river_routing(grid, outlet_i, outlet_j, outlet_λ, outlet_φ; freshwater_density, maximum_search_radius)
 
     freshwater_flux = (; river_runoff)
