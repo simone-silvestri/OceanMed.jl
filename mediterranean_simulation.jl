@@ -8,9 +8,8 @@
 # ## Initial setup with package imports
 
 using OceanMed
-using OceanMed: MEDSEABathymetry, copernicus_z_faces,
-                atlantic_sponge_forcings, atlantic_boundary_conditions
-
+using OceanMed: MEDSEABathymetry, copernicus_z_faces, atlantic_sponge_forcings, atlantic_boundary_conditions
+using CUDA
 using Oceananigans
 using Oceananigans.Units
 using NumericalEarth
@@ -108,7 +107,7 @@ Sglorys = FieldTimeSeries(Sm, grid; time_indices_in_memory = 2, inpainting = 100
 
 forcing = atlantic_sponge_forcings(grid, Tm, Sm, um, vm;
                                     west_longitude = λ₁,
-                                    sponge_width = 2.0,             # degrees (~200 km)
+                                    sponge_width = 2.0,             
                                     tracer_rate = 1 / 1days,
                                     velocity_rate = 1 / 20minutes)
 

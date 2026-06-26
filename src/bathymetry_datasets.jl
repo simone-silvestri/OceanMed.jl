@@ -173,16 +173,15 @@ function Downloads.download(metadatum::MEDSEAMetadatum)
     @root begin
         if !isfile(raw_path)
             @info "Downloading MEDSEA bathymetry ($(medsea_dataset_id)/$(medsea_dataset_part)) to $(metadatum.dir)..."
-            toolbox = CopernicusMarine.copernicusmarine
             credential_kw = isnothing(username) || isnothing(password) ? NamedTuple() : (; username, password)
-            toolbox.subset(; dataset_id = medsea_dataset_id,
-                             dataset_part = medsea_dataset_part,
-                             variables = CopernicusMarine.pylist([medsea_variable]),
-                             output_directory = metadatum.dir,
-                             output_filename = medsea_raw_filename(),
-                             coordinates_selection_method = "outside",
-                             skip_existing = true,
-                             credential_kw...)
+            CopernicusMarine.subset(; dataset_id = medsea_dataset_id,
+                                      dataset_part = medsea_dataset_part,
+                                      variables = CopernicusMarine.pylist([medsea_variable]),
+                                      output_directory = metadatum.dir,
+                                      output_filename = medsea_raw_filename(),
+                                      coordinates_selection_method = "outside",
+                                      skip_existing = true,
+                                      credential_kw...)
         end
         normalize_bathymetry(metadatum.dataset, medsea_variable, raw_path, output_path)
     end
