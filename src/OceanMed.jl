@@ -12,8 +12,9 @@ using .BathymetryDatasets
 using .CERRAForcing
 
 export copernicus_z_faces
-export gibraltar_boundary_conditions, gibraltar_sponge_forcings, WesternSpongeMask
+export atlantic_boundary_conditions, atlantic_sponge_forcings, WesternSpongeMask
 export MEDSEABathymetry, EMODnetBathymetry
 export CERRAReanalysis, cerra_native_grid, CERRAPrescribedAtmosphere, CERRAPrescribedRadiation
+export MediterraneanPrescribedLand
 
 end # module OceanMed

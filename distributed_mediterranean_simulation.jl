@@ -12,7 +12,7 @@ MPI.Init()
 
 using OceanMed
 using OceanMed: MEDSEABathymetry, copernicus_z_faces,
-                gibraltar_sponge_forcings, gibraltar_boundary_conditions
+                atlantic_sponge_forcings, atlantic_boundary_conditions
 
 using Oceananigans
 using Oceananigans.Units
@@ -89,13 +89,13 @@ T_glorys = FieldTimeSeries(T_meta, grid; time_indices_in_memory = 2, inpainting 
 S_glorys = FieldTimeSeries(S_meta, grid; time_indices_in_memory = 2, inpainting = 100)
 η_glorys = FieldTimeSeries(η_meta, grid; time_indices_in_memory = 2, inpainting = 100)
 
-forcing = gibraltar_sponge_forcings(grid, T_meta, S_meta, u_meta, v_meta;
+forcing = atlantic_sponge_forcings(grid, T_meta, S_meta, u_meta, v_meta;
                                     west_longitude = λ₁,
                                     sponge_width = 2.0,
                                     tracer_rate = 1 / 1days,
                                     velocity_rate = 1 / 20minutes)
 
-boundary_conditions = gibraltar_boundary_conditions(grid, u_glorys, v_glorys, T_glorys, S_glorys, η_glorys;
+boundary_conditions = atlantic_boundary_conditions(grid, u_glorys, v_glorys, T_glorys, S_glorys, η_glorys;
                                                     inflow_timescale = 1days,
                                                     outflow_timescale = Inf)
 

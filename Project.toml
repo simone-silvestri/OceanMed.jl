@@ -26,12 +26,15 @@ Preferences = "21216c6a-2e73-6563-6e65-726566657250"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 StyledStrings = "f489334b-da3d-4c2e-b8f0-e476e12c162b"
 
+[sources]
+Oceananigans = {rev = "ss/open-boundary-conditions", url = "https://github.com/CliMA/Oceananigans.jl.git"}
+
 [compat]
 CDSAPI = "2"
 CUDA = "6"
 CairoMakie = "0.15"
 ConservativeRegridding = "0.2"
-CopernicusMarine = "0.1"
+CopernicusMarine = "0.1, 0.2"
 GeometryOps = "0.1"
 NCDatasets = "0.14"
 NumericalEarth = "0.5.6"

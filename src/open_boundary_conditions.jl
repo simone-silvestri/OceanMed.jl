@@ -1,6 +1,6 @@
 module OpenBoundaryConditions
 
-export gibraltar_boundary_conditions, gibraltar_sponge_forcings, WesternSpongeMask
+export atlantic_boundary_conditions, atlantic_sponge_forcings, WesternSpongeMask
 
 using Oceananigans
 using Oceananigans.Units
@@ -42,7 +42,7 @@ end
 end
 
 """
-    gibraltar_boundary_conditions(grid, u_glorys, v_glorys, T_glorys, S_glorys, η_glorys;
+    atlantic_boundary_conditions(grid, u_glorys, v_glorys, T_glorys, S_glorys, η_glorys;
                                   inflow_timescale = 1days, outflow_timescale = Inf)
 
 Build the western (Strait of Gibraltar) open boundary conditions for the Mediterranean, fed by the
@@ -64,7 +64,7 @@ Only the western boundary is open; the remaining edges stay closed (land). Pass 
 surface-flux and bottom-drag conditions. Use the matching `U` boundary with a
 `SplitExplicitFreeSurface`.
 """
-function gibraltar_boundary_conditions(grid, u_glorys, v_glorys, T_glorys, S_glorys, η_glorys;
+function atlantic_boundary_conditions(grid, u_glorys, v_glorys, T_glorys, S_glorys, η_glorys;
                                        inflow_timescale = 1days, outflow_timescale = Inf)
 
     radiation() = Radiation(; inflow_timescale, outflow_timescale)
@@ -74,8 +74,7 @@ function gibraltar_boundary_conditions(grid, u_glorys, v_glorys, T_glorys, S_glo
     T_bcs = FieldBoundaryConditions(west = ValueBoundaryCondition(west_boundary_value;      discrete_form = true, parameters = T_glorys, scheme = radiation()))
     S_bcs = FieldBoundaryConditions(west = ValueBoundaryCondition(west_boundary_value;      discrete_form = true, parameters = S_glorys, scheme = radiation()))
 
-    U_bcs = FieldBoundaryConditions(grid, (Face(), Center(), nothing);
-        west = FlatherBoundaryCondition(west_barotropic_value; discrete_form = true, parameters = (u = u_glorys, η = η_glorys)))
+    U_bcs = FieldBoundaryConditions(grid, (Face(), Center(), nothing); west = FlatherBoundaryCondition(west_barotropic_value; discrete_form = true, parameters = (u = u_glorys, η = η_glorys)))
 
     return (; u = u_bcs, v = v_bcs, T = T_bcs, S = S_bcs, U = U_bcs)
 end
@@ -101,7 +100,7 @@ WesternSpongeMask(west_longitude, width) = WesternSpongeMask(promote(west_longit
 @inline (mask::WesternSpongeMask)(λ, φ, z, t) = exp(-(λ - mask.west_longitude)^2 / (2 * mask.width^2))
 
 """
-    gibraltar_sponge_forcings(grid, T_meta, S_meta, u_meta, v_meta;
+    atlantic_sponge_forcings(grid, T_meta, S_meta, u_meta, v_meta;
                               west_longitude, sponge_width = 2.0,
                               tracer_rate = 1 / 1days, velocity_rate = 1 / 20minutes, inpainting = 100)
 
@@ -112,9 +111,12 @@ gentle `tracer_rate`; the velocities use the stronger `velocity_rate`, keeping t
 interior consistent with the prescribed open-boundary inflow. The sponge complements the open
 boundary by damping oblique waves and slow drift that radiation alone cannot absorb.
 """
-function gibraltar_sponge_forcings(grid, T_meta, S_meta, u_meta, v_meta;
-                                   west_longitude, sponge_width = 2.0,
-                                   tracer_rate = 1 / 1days, velocity_rate = 1 / 20minutes, inpainting = 100)
+function atlantic_sponge_forcings(grid, T_meta, S_meta, u_meta, v_meta;
+                                  west_longitude, 
+                                  sponge_width = 2.0,
+                                  tracer_rate = 1 / 1days, 
+                                  velocity_rate = 1 / 20minutes,
+                                  inpainting = 100)
 
     mask = WesternSpongeMask(west_longitude, sponge_width)
 

@@ -174,11 +174,11 @@ The boundary data can be pre-downloaded on a login node with `download_glorys_me
   Mediterranean grid, refined by an integer factor (default 2 → 280 levels).
 - `MEDSEABathymetry` — the Copernicus Mediterranean bathymetry dataset (≈4.2 km, see above).
 - `EMODnetBathymetry` — the EMODnet DTM 2024 bathymetry (≈115 m, region-subset, see above).
-- `gibraltar_boundary_conditions(grid, u, v, T, S, η; inflow_timescale, outflow_timescale)` — the
+- `atlantic_boundary_conditions(grid, u, v, T, S, η; inflow_timescale, outflow_timescale)` — the
   western open boundary: baroclinic `Radiation` conditions on `u, v, T, S` and a barotropic `Flather`
   condition on the transport `U`, all fed by GLORYS `FieldTimeSeries`. Use with a
   `SplitExplicitFreeSurface`.
-- `gibraltar_sponge_forcings(grid, T_meta, S_meta, u_meta, v_meta; west_longitude, sponge_width, ...)`
+- `atlantic_sponge_forcings(grid, T_meta, S_meta, u_meta, v_meta; west_longitude, sponge_width, ...)`
   — `DatasetRestoring` forcings that relax the prognostic fields towards GLORYS inside a Gaussian
   sponge just behind the western boundary.
 - `WesternSpongeMask(west_longitude, width)` — the Gaussian sponge mask used above.
