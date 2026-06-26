@@ -176,7 +176,7 @@ function Downloads.download(metadatum::MEDSEAMetadatum)
             credential_kw = isnothing(username) || isnothing(password) ? NamedTuple() : (; username, password)
             CopernicusMarine.subset(; dataset_id = medsea_dataset_id,
                                       dataset_part = medsea_dataset_part,
-                                      variable = ["z"],
+                                      variable = ["deptho"],
                                       output_directory = metadatum.dir,
                                       output_filename = medsea_raw_filename(),
                                       coordinates_selection_method = "outside",
