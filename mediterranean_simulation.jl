@@ -1,164 +1,159 @@
-# # Mediterranean simulation with restoring to ECCO
+# # Mediterranean simulation with open boundary conditions at Gibraltar
 #
-# This example is a comprehensive example of setting up and running a high-resolution ocean
-# simulation for the Mediterranean Sea using the Oceananigans and ClimaOcean packages, with
-# a focus on restoring temperature and salinity fields from the ECCO (Estimating the Circulation
-# and Climate of the Ocean) dataset. 
-#
-# The example is divided into several sections, each handling a specific part of the simulation
-# setup and execution process.
+# This example sets up and runs a high-resolution ocean simulation for the Mediterranean Sea using
+# Oceananigans and NumericalEarth. It uses the high-resolution Copernicus Mediterranean bathymetry
+# ([`MEDSEABathymetry`](@ref)) and open boundary conditions (OBCs) at the Strait of Gibraltar fed by
+# GLORYS reanalysis data. The reusable building blocks live in the `OceanMed` module.
 
-# ## Initial Setup with Package Imports
-#
-# We begin by importing necessary Julia packages for visualization (CairoMakie), ocean modeling
-# (Oceananigans, ClimaOcean), and handling of dates and times (CFTime, Dates). 
-# These packages provide the foundational tools for creating the simulation environment, 
-# including grid setup, physical processes modeling, and data visualization.
+# ## Initial setup with package imports
 
-# NOT WORKING ON XQUARTZ using GLMakie
-using Pkg
-#Pkg.activate(".")
-#Pkg.add("StyledStrings")
-#Pkg.add("CairoMakie")
-#Pkg.add("Oceananigans")
-#Pkg.add("ClimaOcean")
-#Pkg.add("CUDA")
-#Pkg.resolve()
-#Pkg.instantiate()
-#Pkg.gc()  # Rimuove i pacchetti inutilizzati
-#Pkg.update()  # Aggiorna i pacchetti
-using CairoMakie
+using OceanMed
+using OceanMed: MEDSEABathymetry, copernicus_z_faces,
+                atlantic_sponge_forcings, atlantic_boundary_conditions
+
 using Oceananigans
-using Oceananigans.Grids
-using Oceananigans: architecture
-using Oceananigans.Advection: FluxFormAdvection
-using ClimaOcean
-using ClimaOcean.ECCO
-using ClimaOcean.ECCO: ECCO4Monthly
 using Oceananigans.Units
+using NumericalEarth
+using NumericalEarth.DataWrangling
+
+using CairoMakie
 using Printf
-using NCDatasets
 using Dates
 
-include("vertical_diffusivity.jl")
-
-# ## Grid Configuration for the Mediterranean Sea
+# ## Grid configuration for the Mediterranean Sea
 #
-# The script defines a high-resolution grid to represent the Mediterranean Sea, specifying the domain in terms of longitude (λ₁, λ₂), 
-# latitude (φ₁, φ₂), and a stretched vertical grid to capture the depth variation (`z_faces`). 
-# The grid resolution is set to approximately 1/15th of a degree, which translates to a spatial resolution of about 7 km. 
-# This section demonstrates the use of the LatitudeLongitudeGrid function to create a grid that matches the
-# Mediterranean's geographical and bathymetric features.
+# The grid spans the Mediterranean in longitude (λ₁, λ₂) and latitude (φ₁, φ₂) at 1/24ᵗʰ of a degree —
+# the native resolution of the MEDSEA bathymetry, the finest topography available for this domain — with
+# a stretched vertical grid reconstructed from the Copernicus levels (280 layers).
 
 arch = GPU()
 
-const λ₁, λ₂  = (-8.6, 42) # domain in longitude
-const φ₁, φ₂  = (  30, 48) # domain in latitude
+md = Metadata(:bottom_height, dataset=MEDSEABathymetry())
+λ = DataWrangling.longitude_interfaces(md)
+φ = DataWrangling.latitude_interfaces(md)
 
-Nx = 30 * ceil(Int, λ₂ - λ₁) # 1/50th of a degree resolution
-Ny = 30 * ceil(Int, φ₂ - φ₁) # 1/50th of a degree resolution
-Nz = 140 # 140 vertical levels
-
-# Probably you want to change `r_faces` to get the resolution you want 
-# at surface vs depth. This is an Array of size `Nz+1` that defines the 
-# position of the initial position of z-interfaces (when `η = 0`)
-ds = Dataset("data/zc_copernicus.nc")
-r_centers = reverse(ds["depth"][:])
-r_faces   = zeros(Nz+1)
-for k in Nz:-1:1
-  r_faces[k] = r_faces[k+1] - (r_centers[k] + r_faces[k+1]) * 2
-end
-
+r_faces = copernicus_z_faces(; refinement = 1) # 280 levels reconstructed from data/zc_copernicus.nc
 z_faces = MutableVerticalDiscretization(r_faces)
 
-# To run on Distributed architectures (for example 4 ranks in x and 4 in y):
+Nx = length(λ) - 1
+Ny = length(φ) - 1
+Nz = length(r_faces) - 1
+
+# To run on distributed architectures (for example 4 ranks in x and 4 in y):
 # arch = Distributed(arch, partition = Partition(x = 4, y = 4))
 
 grid = LatitudeLongitudeGrid(arch;
                              size = (Nx, Ny, Nz),
-                             latitude  = (φ₁, φ₂),
-                             longitude = (λ₁, λ₂),
+                             latitude  = φ,
+                             longitude = λ,
                              z = z_faces,
                              halo = (7, 7, 7))
 
-# ### Bathymetry Interpolation
+# ### High-resolution Mediterranean bathymetry
 #
-# The script interpolates bathymetric data onto the grid, ensuring that the model accurately represents 
-# the sea floor's topography. Parameters such as `minimum_depth` and `interpolation_passes`
-# are adjusted to refine the bathymetry representation.
+# `MEDSEABathymetry` registers the static bottom topography of the Copernicus product
+# `MEDSEA_ANALYSISFORECAST_PHY_006_013` (~4.2 km) as a NumericalEarth dataset, downloaded through the
+# Copernicus Marine "Data Access" service. Downloading requires the `COPERNICUS_USERNAME` and
+# `COPERNICUS_PASSWORD` environment variables. Replace the dataset with `ETOPO2022()` for the global
+# default bathymetry.
 
-bottom_height = regrid_bathymetry(grid, 
+bathymetry = Metadatum(:bottom_height; dataset = MEDSEABathymetry(), dir = "./data")
+
+bottom_height = regrid_bathymetry(grid, bathymetry;
                                   minimum_depth = 5,
-                                  interpolation_passes = 1,
+                                  interpolation_passes = 5,
                                   major_basins = 1)
 
-grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_map=true)
+grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_map = true)
 
-# ## ECCO Restoring
+λ₁ = first(λnodes(grid, Face()))
+λ₂ =  last(λnodes(grid, Face()))
+
+φ₁ = first(φnodes(grid, Face()))
+φ₂ =  last(φnodes(grid, Face()))
+
+# ## Open boundary conditions at Gibraltar using GLORYS
 #
-# The model is restored in a sponge region outside Gibraltar to the temperature and salinity fields from the ECCO dataset.
-# We build the restoring using the `ECCORestoring` functionality. 
-# This allows us to nudge the model towards realistic temperature and salinity profiles.
-# `ECCORestoring` accepts a `mask` keyword argument to restrict the restoring region.
+# Instead of restoring to global data near Gibraltar, we impose open boundary conditions on the western
+# boundary (just outside the Strait at λ₁ = -8.6°), fed by the GLORYS reanalysis: a baroclinic `Radiation`
+# condition and a barotropic `Flather` condition, combined with a sponge layer (see the `OceanMed` helpers).
 
-const λₑ = - 7 # eastern bound of the restoring region
+start_date = DateTime(1993, 1, 1)
+end_date   = DateTime(1994, 1, 1)
+dataset    = GLORYSDaily()
+bbox       = BoundingBox(longitude = (λ₁ - 2, λ₂ + 2), latitude  = (φ₁ - 2, φ₂ + 2))
 
-@inline gibraltar_mask(λ, φ, z, t) = min(1.0, max(0.0, 1 / (λ₁ - λₑ) * (λ - λₑ)))
+dir = "./data"
 
-dates = DateTime(1993, 1, 1) : Month(1) : DateTime(1993, 5, 1)
+um = Metadata(:u_velocity;   dataset, dir, region = bbox, start_date, end_date)
+vm = Metadata(:v_velocity;   dataset, dir, region = bbox, start_date, end_date)
+Tm = Metadata(:temperature;  dataset, dir, region = bbox, start_date, end_date)
+Sm = Metadata(:salinity;     dataset, dir, region = bbox, start_date, end_date)
+ηm = Metadata(:free_surface; dataset, dir, region = bbox, start_date, end_date)
 
-# This contructor downloads the ECCO dataset in the `dates` range. Make sure you have internet access 
-# and you pass login information to the ECCO donwloader (see https://github.com/CliMA/ClimaOcean.jl/blob/main/src/DataWrangling/ECCO/README.md) 
-# If you have other data to use as restoring we can add a custom backend to use the data.
-FT = ECCORestoring(:temperature, arch; dates, mask=gibraltar_mask, rate=1/10days)
-FS = ECCORestoring(:salinity, arch;    dates, mask=gibraltar_mask, rate=1/10days)
+# Load GLORYS data as FieldTimeSeries interpolated onto the simulation grid. Inpainting fills the
+# GLORYS land/under-bathymetry points so the western boundary column has valid data at depth.
+uglorys = FieldTimeSeries(um, grid; time_indices_in_memory = 2, inpainting = 100)
+vglorys = FieldTimeSeries(vm, grid; time_indices_in_memory = 2, inpainting = 100)
+Tglorys = FieldTimeSeries(Tm, grid; time_indices_in_memory = 2, inpainting = 100)
+Sglorys = FieldTimeSeries(Sm, grid; time_indices_in_memory = 2, inpainting = 100)
+ηglorys = FieldTimeSeries(ηm, grid; time_indices_in_memory = 2, inpainting = 100)
 
-# Constructing the Simulation
+# ## Forcing and boundary conditions
 #
-# We construct an ocean simulation that evolves two tracers, temperature (:T), salinity (:S)
-# and we pass the previously defined forcing that nudge these tracers 
+# The western (Gibraltar) boundary is the only open edge. Its baroclinic velocities and tracers get an
+# Orlanski `Radiation` open boundary, while the barotropic transport gets a `Flather` condition — both
+# fed by GLORYS. A `DatasetRestoring` sponge just inside the boundary complements them by relaxing the
+# near-boundary interior towards GLORYS (see the `OceanMed` helpers).
+
+forcing = atlantic_sponge_forcings(grid, Tm, Sm, um, vm;
+                                    west_longitude = λ₁,
+                                    sponge_width = 2.0,             # degrees (~200 km)
+                                    tracer_rate = 1 / 1days,
+                                    velocity_rate = 1 / 20minutes)
+
+boundary_conditions = atlantic_boundary_conditions(grid, uglorys, vglorys, Tglorys, Sglorys, ηglorys;
+                                                   inflow_timescale = 1days,   # relax to GLORYS on inflow
+                                                   outflow_timescale = Inf)    # let outgoing waves radiate freely
+
+# ## Constructing the simulation
+#
+# An ocean simulation that evolves temperature (:T) and salinity (:S) with the open western boundary.
+# The split-explicit free surface carries the barotropic mode that the `Flather` boundary acts on.
 
 momentum_advection = WENOVectorInvariant()
-high_order = WENO(order=7)
-low_order = Centered()
-tracer_advection = FluxFormAdvection(high_order, high_order, low_order)
-closure = CalibratedRiBasedVerticalDiffusivity()
-timestepper = :SplitRungeKutta3
+tracer_advection   = WENO(order = 7)
+free_surface       = SplitExplicitFreeSurface(grid; substeps = 80)
 
-ocean = ocean_simulation(grid; 
-                         momentum_advection, 
-                         tracer_advection, 
-                         forcing=(T=FT, S=FS))
+ocean = ocean_simulation(grid;
+                         momentum_advection,
+                         tracer_advection,
+                         free_surface,
+                         forcing,
+                         boundary_conditions)
 
-# Initializing the model
+# Initialize temperature and salinity from GLORYS data.
+set!(ocean.model, T = Tm[1], S = Sm[1])
+
+# ## Atmospheric forcing
 #
-# The model can be initialized with custom values or with ecco fields.
-# In this case, our ECCO dataset has access to a temperature and a salinity
-# field, so we initialize temperature T and salinity S from ECCO.
+# We force the model with the JRA55-do dataset (surface heat fluxes and wind stress). Only 10 time
+# instances are held in memory at a time and updated as the model progresses.
 
-set!(ocean.model, T=Metadata(:temperature; dates=dates[1], dataset=ECCO4Monthly()), 
-                  S=Metadata(:salinity;    dates=dates[1], dataset=ECCO4Monthly()))
+atmosphere = ERA5PrescribedAtmosphere(arch; dir = "./data", start_date, end_date)
+radiation  = ERA5PrescribedRadiation(arch; dir = "./data", start_date, end_date)
+land       = MediterraneanPrescribedLand(grid)
 
-## Adding an atmospheric forcing
+# The coupled model (no sea ice).
+coupled_model = OceanSeaIceModel(ocean; atmosphere, radiation, land)
 
-# we use JRA55-do dataset to force the model with surface heat fluxes and wind stress
-# Only 10 time instances of the JRA55 datasets are loaded in memory at each time
-# these are updated as the model progresses
-atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(10), include_rivers_and_icebergs=true, dir="./data")
+# ## The coupled simulation
 
-# This uses a quite simple ocean albedo model (latitude dependent) and 
-# an ocean emissivity of 0.97. It is all customizable
-radiation = Radiation()
-
-# The coupled model! (we have no sea-ice so we do not add it)
-coupled_model = OceanSeaIceModel(ocean; atmosphere, radiation)
-
-# The coupled simulation:
 Δt = 10
 stop_time = 5days
 simulation = Simulation(coupled_model; Δt, stop_time)
 
-function progress(sim) 
+function progress(sim)
     u, v, w = sim.model.ocean.model.velocities
     T, S = sim.model.ocean.model.tracers
 
@@ -172,19 +167,22 @@ end
 
 simulation.callbacks[:progress] = Callback(progress, IterationInterval(10))
 
-#Versione con uscite ogni 24 ore
+# Surface fields written every 24 hours.
 simulation.output_writers[:surface_fields] = JLD2Writer(ocean.model, merge(ocean.model.tracers, ocean.model.velocities),
-                                                       schedule = TimeInterval(24hours),
-                                                       indices = (:, :, grid.Nz),
-                                                       overwrite_existing = true,
-                                                       filename = "med_surface_fields.jld2")
+                                                        schedule = TimeInterval(24hours),
+                                                        indices = (:, :, grid.Nz),
+                                                        overwrite_existing = true,
+                                                        filename = "med_surface_fields.jld2")
 
-ocean.output_writers[:checkpointer] = Checkpointer(ocean.model, 
-						   schedule = IterationInterval(86400),
-						   overwrite_existing = true,
-						   prefix = "mediterranean")
+ocean.output_writers[:checkpointer] = Checkpointer(ocean.model,
+                                                   schedule = IterationInterval(86400),
+                                                   overwrite_existing = true,
+                                                   prefix = "mediterranean")
 
-## Running the Simulation
+# ## Running the simulation
+#
+# A short spin-up at a small time step, then a year-long run at a larger time step.
+
 run!(simulation)
 
 simulation.Δt = 2minutes
@@ -192,18 +190,15 @@ simulation.stop_time = 365days
 
 run!(simulation)
 
-# Record a video
+# ## Recording a video
 #
-# Let's read the data and record a video of the Mediterranean Sea's surface
-# (1) Zonal velocity (u)
-# (2) Meridional velocity (v)
-# (3) Temperature (T)
-# (4) Salinity (S)
+# Read back the surface fields and record a video of (1) zonal velocity, (2) meridional velocity,
+# (3) temperature, and (4) salinity.
 
-u_series = FieldTimeSeries("med_surface_fields.jld2", "u"; backend=OnDisk())
-v_series = FieldTimeSeries("med_surface_fields.jld2", "v"; backend=OnDisk())
-T_series = FieldTimeSeries("med_surface_fields.jld2", "T"; backend=OnDisk())
-S_series = FieldTimeSeries("med_surface_fields.jld2", "S"; backend=OnDisk())
+u_series = FieldTimeSeries("med_surface_fields.jld2", "u"; backend = OnDisk())
+v_series = FieldTimeSeries("med_surface_fields.jld2", "v"; backend = OnDisk())
+T_series = FieldTimeSeries("med_surface_fields.jld2", "T"; backend = OnDisk())
+S_series = FieldTimeSeries("med_surface_fields.jld2", "S"; backend = OnDisk())
 iter = Observable(1)
 
 u = @lift(u_series[$iter])
@@ -223,6 +218,6 @@ heatmap!(ax, S)
 
 CairoMakie.record(fig, "mediterranean_video.mp4", 1:length(u_series.times); framerate = 5) do i
     @info "recording iteration $i"
-    iter[] = i    
+    iter[] = i
 end
 # ![](mediterranean_video.mp4)
