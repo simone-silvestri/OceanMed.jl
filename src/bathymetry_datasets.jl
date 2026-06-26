@@ -69,25 +69,34 @@ DataWrangling.default_download_directory(::NormalizedBathymetry) = pwd()
 ##### Shared geometry: read the regular lat–lon mesh back from the normalized file
 #####
 
-function outer_face_extent(centers)
-    spacing = centers[2] - centers[1]
-    return (first(centers) - spacing / 2, last(centers) + spacing / 2)
+function interfaces_from_centers(centers)
+    spacing1 = centers[2] - centers[1]
+    spacinge = centers[end] - centers[end-1]
+    interfaces = zeros(length(centers) + 1)
+    interfaces[1] = centers[1] - spacing1 / 2
+    interfaces[end] = centers[end] + spacinge / 2
+    interfaces[2:end-1] .= (centers[1:end-1] .+ centers[2:end]) ./ 2
+    return interfaces
 end
 
-function read_horizontal_coordinates(metadata::NormalizedMetadata)
-    path = metadata_path(metadata)
-    isfile(path) || throw(ArgumentError("$(path) not found — download the dataset first."))
+function DataWrangling.longitude_interfaces(metadata::NormalizedMetadata)
+    path = DataWrangling.metadata_path(metadata)
     Dataset(path) do dataset
-        return Float64.(dataset["longitude"][:]), Float64.(dataset["latitude"][:])
+        return interfaces_from_centers(dataset["longitude"][:])
     end
 end
 
-DataWrangling.longitude_interfaces(metadata::NormalizedMetadata) = outer_face_extent(first(read_horizontal_coordinates(metadata)))
-DataWrangling.latitude_interfaces(metadata::NormalizedMetadata)  = outer_face_extent(last(read_horizontal_coordinates(metadata)))
+function DataWrangling.latitude_interfaces(metadata::NormalizedMetadata) 
+    path = DataWrangling.metadata_path(metadata)
+    Dataset(path) do dataset
+        return interfaces_from_centers(dataset["latitude"][:])
+    end
+end
 
 function Base.size(metadata::NormalizedMetadata)
-    longitude, latitude = read_horizontal_coordinates(metadata)
-    return (length(longitude), length(latitude), 1, 1)
+    longitude = DataWrangling.longitude_interfaces(metadata)
+    latitude = DataWrangling.latitude_interfaces(metadata)
+    return (length(longitude) - 1, length(latitude) - 1, 1)
 end
 
 #####

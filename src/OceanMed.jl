@@ -3,6 +3,7 @@ module OceanMed
 include("vertical_grids.jl")
 include("open_boundary_conditions.jl")
 include("bathymetry_datasets.jl")
+include("river_forcing.jl")
 include("cerra_forcing.jl")
 
 using .VerticalGrids
