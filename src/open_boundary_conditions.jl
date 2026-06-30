@@ -4,12 +4,14 @@ export atlantic_boundary_conditions, atlantic_sponge_forcings, AtlanticSpongeMas
 
 using Oceananigans
 using Oceananigans.Units
+using Oceananigans.Grids: node
 using Oceananigans.Operators: Δzᶠᶜᶜ, Δzᶜᶠᶜ
 using Oceananigans.ImmersedBoundaries: immersed_peripheral_node, immersed_inactive_node
 using Oceananigans.BoundaryConditions: Radiation, FlatherBoundaryCondition,
                                        NormalFlowBoundaryCondition, ValueBoundaryCondition
 
 using NumericalEarth: DatasetRestoring
+import NumericalEarth: stateindex
 
 #####
 ##### Baroclinic open boundary: external value read from a GLORYS FieldTimeSeries
@@ -166,6 +168,12 @@ AtlanticSpongeMask(west_longitude, south_latitude, north_latitude, width, taper_
     south = exp(-(φ - mask.south_latitude)^2 / (2 * mask.width^2)) * taper
 
     return max(west, north, south)
+end
+
+@inline function stateindex(mask::AtlanticSpongeMask, i, j, k, grid, time, loc)
+    LX, LY, LZ = loc
+    λ, φ, z = node(i, j, k, grid, LX(), LY(), LZ())
+    return mask(λ, φ, z, time)
 end
 
 """
